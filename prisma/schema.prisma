@@ -1,0 +1,502 @@
+// Schema canônico do projeto inteiro. Agent-Api é o ÚNICO serviço que roda
+// `prisma migrate` contra este banco. Os demais serviços (Desk-API, Desk-Worker,
+// Inbound-Service, Outbound-Worker, Notification-Worker) têm seu próprio
+// prisma/schema.prisma com um SUBCONJUNTO destes models, apontando para o mesmo
+// DATABASE_URL, rodando apenas `prisma generate` — nunca `prisma migrate`.
+// Qualquer alteração de coluna feita aqui precisa ser espelhada manualmente nos
+// schemas reduzidos dos outros serviços.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- BETTER AUTH (core + plugins organization/admin) ----------
+
+model User {
+  id               String       @id
+  name             String
+  email            String
+  emailVerified    Boolean      @default(false)
+  image            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  /// Flag de plataforma do plugin admin do Better Auth. role === "admin" ⇒
+  /// Administrador global (ignora a matriz de permissões por organização).
+  role             String?
+  banned           Boolean?     @default(false)
+  banReason        String?
+  banExpires       DateTime?
+  sessions         Session[]
+  accounts         Account[]
+  members          Member[]
+  invitations      Invitation[]
+  queueMemberships QueueMember[]
+  assignedTickets  Ticket[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id                   String   @id
+  expiresAt            DateTime
+  token                String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  ipAddress            String?
+  userAgent            String?
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  impersonatedBy       String?
+  activeOrganizationId String?
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model Organization {
+  id        String   @id
+  name      String
+  slug      String
+  logo      String?
+  createdAt DateTime
+  metadata  String?
+  cnpj      String
+  status    String?  @default("ACTIVE")
+
+  members          Member[]
+  invitations      Invitation[]
+  agents           Agent[]
+  whatsappChannels WhatsappChannel[]
+  serviceIslands   ServiceIsland[]
+  targets          Target[]
+  tickets          Ticket[]
+  ticketCounter    TicketCounter?
+  auditLogs        AuditLog[]
+  errorLogs        ErrorLog[]
+
+  @@unique([slug])
+  @@map("organization")
+}
+
+/// Role por organização. Better Auth (plugin organization) é dono deste campo a
+/// nível de schema, por isso é String livre (não enum) — mesmo padrão do fluxy
+/// deprecado. Os valores de negócio reais (GERENTE | SUPERVISOR | ATENDENTE) são
+/// um union type TypeScript (src/domain/enums/member-role.ts), validados e
+/// SEMPRE escritos explicitamente pela aplicação (nunca pelo default do Better
+/// Auth) — ver CompanyRepository. Administrador NÃO é um valor aqui — é a flag
+/// global User.role === "admin" do plugin admin do Better Auth, ortogonal a Member.
+model Member {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String       @default("member")
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("member")
+}
+
+model Invitation {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           String?
+  status         String       @default("pending")
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+  inviterId      String
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("invitation")
+}
+
+// ---------- AGENT ----------
+
+/// Todo agente tem 7 campos de mensagem. processingMessage, transferMessage e
+/// unsupportedFormatMessage são OBRIGATÓRIOS (sem toggle — sempre ativos). Os
+/// outros 4 (welcome/outOfHours/closing/error) têm um par mensagem+enabled: se
+/// enabled=false, a IA gera a resposta livremente naquele cenário.
+model Agent {
+  id             String  @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  isActive       Boolean @default(true)
+
+  welcomeMessage  String
+  welcomeEnabled  Boolean @default(true)
+
+  /// Obrigatória, sem toggle de desativação.
+  processingMessage String
+
+  /// Obrigatória, sem toggle de desativação. Enviada pelo Desk-Worker ao criar
+  /// o ticket como WAITING (uma única vez por ticket).
+  transferMessage String
+
+  /// Obrigatória, sem toggle de desativação.
+  unsupportedFormatMessage String
+
+  outOfHoursMessage String
+  outOfHoursEnabled Boolean @default(true)
+
+  closingMessage String
+  closingEnabled Boolean @default(true)
+
+  errorMessage String
+  errorEnabled Boolean @default(true)
+
+  defaultQueueId String?
+  defaultQueue   Queue?  @relation(fields: [defaultQueueId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  whatsappChannels WhatsappChannel[]
+
+  @@index([organizationId])
+  @@index([defaultQueueId])
+}
+
+// ---------- WHATSAPP CHANNEL ----------
+
+model WhatsappChannel {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agentId        String
+  agent          Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  phoneNumberId String @unique
+  displayNumber String
+  /// WhatsApp Business Account ID — usado exclusivamente para buscar os
+  /// templates aprovados pela Meta deste canal.
+  wabaId        String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  serviceIsland ServiceIsland?
+  targets       Target[]
+
+  @@index([organizationId])
+  @@index([agentId])
+}
+
+// ---------- ILHA DE ATENDIMENTO ----------
+
+/// Cada WhatsApp Channel tem exatamente uma ilha de atendimento (1:1).
+model ServiceIsland {
+  id                String          @id @default(cuid())
+  organizationId    String
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  whatsappChannelId String          @unique
+  whatsappChannel   WhatsappChannel @relation(fields: [whatsappChannelId], references: [id], onDelete: Cascade)
+  name              String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  queues Queue[]
+
+  @@index([organizationId])
+}
+
+model Queue {
+  id              String        @id @default(cuid())
+  serviceIslandId String
+  serviceIsland   ServiceIsland @relation(fields: [serviceIslandId], references: [id], onDelete: Cascade)
+  name            String
+
+  /// Horário de atendimento personalizado desta fila.
+  businessHoursEnabled Boolean @default(false)
+  businessHoursStart   String? // "HH:mm"
+  businessHoursEnd     String? // "HH:mm"
+  businessDays         Int[]   @default([1, 2, 3, 4, 5]) // 0=domingo..6=sábado
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members          QueueMember[]
+  tickets          Ticket[]
+  defaultForAgents Agent[]
+
+  @@index([serviceIslandId])
+}
+
+model QueueMember {
+  id        String   @id @default(cuid())
+  queueId   String
+  queue     Queue    @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([queueId, userId])
+  @@index([userId])
+}
+
+// ---------- TARGET (CONTATO) ----------
+
+enum TargetStatus {
+  AI
+  HUMAN
+  FINISHED
+}
+
+model Target {
+  id                String          @id @default(cuid())
+  organizationId    String
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  whatsappChannelId String
+  whatsappChannel   WhatsappChannel @relation(fields: [whatsappChannelId], references: [id], onDelete: Cascade)
+
+  /// wa_id da Meta (telefone normalizado). Identidade real do contato.
+  waId  String
+  name  String?
+  email String?
+  /// Pares key:value livres, editáveis no Agent Console (leitura) e Desk Console
+  /// (edição), via input de chave + input de valor.
+  metadata Json?
+
+  status              TargetStatus @default(AI)
+  firstInteractionAt  DateTime     @default(now())
+  lastInteractionAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messagingSessions MessagingSession[]
+  tickets           Ticket[]
+
+  @@unique([organizationId, whatsappChannelId, waId])
+  @@index([organizationId])
+  @@index([whatsappChannelId])
+}
+
+// ---------- SESSÃO DE MENSAGERIA (janela de 24h) ----------
+
+enum SessionOrigin {
+  CUSTOMER_MESSAGE
+  CAMPAIGN_TEMPLATE
+}
+
+/// Uma linha por janela de atendimento. Nunca é apagada nem "fechada" com uma
+/// flag — a expiração das 24h é SEMPRE calculada em runtime a partir de
+/// lastCustomerMessageAt. Reengajamento (template aprovado ou nova mensagem do
+/// próprio cliente) sempre cria uma NOVA linha; a anterior fica só para
+/// histórico/auditoria.
+model MessagingSession {
+  id                String   @id @default(cuid())
+  targetId          String
+  target            Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  whatsappChannelId String
+
+  createdVia             SessionOrigin @default(CUSTOMER_MESSAGE)
+  startedAt              DateTime      @default(now())
+  lastCustomerMessageAt  DateTime      @default(now())
+  lastAttendantMessageAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  tickets Ticket[]
+
+  @@index([targetId])
+  @@index([whatsappChannelId])
+}
+
+// ---------- TICKET (ATENDIMENTO HUMANO) ----------
+
+enum TicketStatus {
+  WAITING
+  IN_PROGRESS
+  CLOSED
+}
+
+enum TicketCloseReason {
+  RESOLVED
+  TRANSFERRED_QUEUE
+  TRANSFERRED_AGENT
+  SESSION_EXPIRED
+  ABANDONED
+}
+
+model Ticket {
+  id             String       @id @default(cuid())
+  /// Sequencial por organização, gerado via TicketCounter (upsert atômico).
+  ticketNumber   Int
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  queueId        String
+  queue          Queue        @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  targetId       String
+  target         Target       @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  messagingSessionId String
+  messagingSession   MessagingSession @relation(fields: [messagingSessionId], references: [id], onDelete: Cascade)
+
+  status TicketStatus @default(WAITING)
+
+  /// null = em espera, visível a todos os atendentes da fila. Preenchido =
+  /// atendente que "puxou" o ticket (claim atômico, ver migration para o
+  /// índice único parcial que impede mais de um ticket aberto por sessão).
+  assignedUserId String?
+  assignedUser   User?   @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  assignedAt     DateTime?
+
+  /// Ticket que originou este (transferência de fila ou de atendente fecha o
+  /// ticket atual e cria um novo, nunca faz update in-place).
+  transferredFromTicketId String?
+  transferredFromTicket   Ticket?  @relation("TicketTransferChain", fields: [transferredFromTicketId], references: [id], onDelete: SetNull)
+  transferredToTickets    Ticket[] @relation("TicketTransferChain")
+
+  closeReason TicketCloseReason?
+
+  /// Throttle do reenvio de transferMessage enquanto o ticket está WAITING.
+  lastWaitingMessageSentAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  closedAt  DateTime?
+
+  messages TicketMessage[]
+
+  @@unique([organizationId, ticketNumber])
+  @@index([queueId])
+  @@index([targetId])
+  @@index([messagingSessionId])
+  @@index([assignedUserId])
+}
+
+/// Guarda o último ticketNumber emitido por organização. Incrementado via
+/// upsert na mesma transação que cria o Ticket (INSERT ... ON CONFLICT DO
+/// UPDATE, atômico sob concorrência).
+model TicketCounter {
+  organizationId String       @id
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lastNumber     Int          @default(0)
+}
+
+enum TicketMessageSender {
+  CUSTOMER
+  ATTENDANT
+  SYSTEM
+}
+
+enum MessageType {
+  TEXT
+  AUDIO
+  IMAGE
+  DOCUMENT
+  STICKER
+}
+
+/// Rastro (ids + tipo, sem conteúdo — o conteúdo mora no Mongo) de cada
+/// mensagem trocada dentro de um ticket.
+model TicketMessage {
+  id           String              @id @default(cuid())
+  ticketId     String
+  ticket       Ticket              @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderType   TicketMessageSender
+  senderUserId String?
+  /// _id do documento correspondente na collection `messages` do Mongo.
+  mongoMessageId String?
+  messageType    MessageType        @default(TEXT)
+  createdAt      DateTime           @default(now())
+
+  @@index([ticketId])
+}
+
+// ---------- DEDUP DE MENSAGENS INBOUND ----------
+
+/// Cada mensagem recebida da Meta só pode ser processada uma vez. Antes de
+/// processar, o Inbound-Service verifica se o id externo já está aqui.
+model ProcessedInboundMessage {
+  id                String   @id @default(cuid())
+  externalMessageId String   @unique
+  whatsappChannelId String
+  processedAt       DateTime @default(now())
+
+  @@index([whatsappChannelId])
+}
+
+// ---------- OBSERVABILIDADE ----------
+
+model AuditLog {
+  id             String        @id @default(cuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  userId         String
+  action         String
+  resourceType   String
+  resourceId     String
+  beforeState    Json?
+  afterState     Json?
+  ip             String?
+  userAgent      String?
+  createdAt      DateTime      @default(now())
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([resourceType, resourceId])
+}
+
+model ErrorLog {
+  id             String        @id @default(cuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  userId         String?
+  route          String
+  message        String
+  stack          String?
+  statusCode     Int
+  createdAt      DateTime      @default(now())
+
+  @@index([organizationId])
+  @@index([route])
+}
