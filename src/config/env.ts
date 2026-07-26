@@ -39,6 +39,11 @@ const envSchema = z.object({
   SEAWEEDFS_S3_PREFIX: z.string().default("fluxy-saas/agent-api"),
 
   APP_TIMEZONE: z.string().default("America/Sao_Paulo"),
+
+  /// Usado para consultar a Graph API da Meta (ex.: listar os números de
+  /// telefone cadastrados em um WABA) — mesmo token do Inbound-Service.
+  META_ACCESS_TOKEN: z.string().min(1),
+  META_GRAPH_API_VERSION: z.string().default("v21.0"),
 });
 
 const parsed = envSchema.safeParse(process.env);

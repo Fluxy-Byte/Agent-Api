@@ -215,8 +215,9 @@ model WhatsappChannel {
   phoneNumberId String @unique
   displayNumber String
   /// WhatsApp Business Account ID — usado exclusivamente para buscar os
-  /// templates aprovados pela Meta deste canal.
-  wabaId        String @unique
+  /// templates aprovados pela Meta deste canal. Não é único: um WABA pode ter
+  /// vários números de telefone, cada um virando seu próprio WhatsappChannel.
+  wabaId        String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -226,6 +227,7 @@ model WhatsappChannel {
 
   @@index([organizationId])
   @@index([agentId])
+  @@index([wabaId])
 }
 
 // ---------- ILHA DE ATENDIMENTO ----------

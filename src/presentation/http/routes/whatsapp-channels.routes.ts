@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { whatsappChannelService } from "../../../application/whatsapp-channel/whatsapp-channel-service";
 import {
+  bulkCreateWhatsappChannelSchema,
   createWhatsappChannelSchema,
   updateWhatsappChannelSchema,
+  wabaLookupSchema,
 } from "../../../application/whatsapp-channel/whatsapp-channel-validation";
 import { PermissionAction } from "../../../domain/enums/permission-action";
 import { ValidationError } from "../../../domain/errors/app-error";
@@ -40,6 +42,37 @@ whatsappChannelsRouter.post(
     });
 
     return channel;
+  }),
+);
+
+whatsappChannelsRouter.post(
+  "/waba-lookup",
+  apiHandler({ action: PermissionAction.WABAS_WRITE }, async (req) => {
+    const parsed = wabaLookupSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    return whatsappChannelService.lookupWaba(parsed.data.wabaId);
+  }),
+);
+
+whatsappChannelsRouter.post(
+  "/bulk",
+  apiHandler({ action: PermissionAction.WABAS_WRITE }, async (req, _res, user) => {
+    const parsed = bulkCreateWhatsappChannelSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const result = await whatsappChannelService.bulkCreate(user, parsed.data);
+
+    for (const channel of result.created) {
+      await recordAudit(req, user, {
+        action: "WHATSAPP_CHANNEL_CREATED",
+        resourceType: "WhatsappChannel",
+        resourceId: channel.id,
+        afterState: channel,
+      });
+    }
+
+    return result;
   }),
 );
 

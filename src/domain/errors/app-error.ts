@@ -40,3 +40,9 @@ export class ConflictError extends AppError {
     super(message, 409);
   }
 }
+
+export class UpstreamError extends AppError {
+  constructor(message = "Falha ao se comunicar com um serviço externo.") {
+    super(message, 502);
+  }
+}
