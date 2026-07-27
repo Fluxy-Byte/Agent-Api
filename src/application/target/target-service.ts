@@ -47,7 +47,7 @@ export const targetService = {
 
     const tickets = await prisma.ticket.findMany({
       where: { targetId: target.id },
-      include: { queue: true },
+      include: { queue: true, assignedUser: { select: { id: true, name: true, email: true } } },
       orderBy: { createdAt: "desc" },
     });
 
