@@ -24,4 +24,21 @@ export const serviceIslandService = {
     await this.getById(user, id);
     return prisma.serviceIsland.update({ where: { id }, data: { name } });
   },
+
+  /// Tickets de todas as filas desta ilha — usado na tela da ilha pra listar
+  /// todo o atendimento humano que passou por ela, sem precisar entrar
+  /// fila por fila.
+  async listTickets(user: AuthUser, islandId: string) {
+    await this.getById(user, islandId);
+
+    return prisma.ticket.findMany({
+      where: { queue: { serviceIslandId: islandId }, organizationId: user.activeOrganizationId! },
+      include: {
+        target: { select: { id: true, name: true, waId: true } },
+        queue: { select: { id: true, name: true } },
+        assignedUser: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  },
 };

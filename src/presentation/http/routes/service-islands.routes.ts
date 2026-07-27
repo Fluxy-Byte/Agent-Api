@@ -27,6 +27,13 @@ serviceIslandsRouter.get(
   }),
 );
 
+serviceIslandsRouter.get(
+  "/:id/tickets",
+  apiHandler({ action: PermissionAction.CONTACTS_VIEW }, async (req, _res, user) => {
+    return serviceIslandService.listTickets(user, String(req.params.id));
+  }),
+);
+
 serviceIslandsRouter.put(
   "/:id",
   apiHandler({ action: PermissionAction.SERVICE_ISLANDS_WRITE }, async (req, _res, user) => {
