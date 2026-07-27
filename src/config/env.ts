@@ -48,6 +48,12 @@ const envSchema = z.object({
   /// Base URL do Campaign-Worker (POST /campaign/send) — autenticado com o
   /// mesmo INTERNAL_API_KEY acima.
   CAMPAIGN_WORKER_URL: z.string().min(1),
+
+  /// Conta Gmail usada pra enviar o e-mail de redefinição de senha (Better
+  /// Auth emailAndPassword.sendResetPassword) — PASSWORD_GOOGLE é uma senha de
+  /// app do Gmail (não a senha normal da conta).
+  GMAIL_USER: z.string().min(1),
+  PASSWORD_GOOGLE: z.string().min(1),
 });
 
 const parsed = envSchema.safeParse(process.env);

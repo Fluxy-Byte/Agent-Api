@@ -3,6 +3,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { admin, organization } from "better-auth/plugins";
 import { env } from "../../config/env";
 import { prisma } from "../database/prisma/client";
+import { sendResetPasswordEmail } from "../mail/mailer";
 
 /// Tenant = Organization (empresa). Member.role guarda um dos papéis por-empresa
 /// (GERENTE | SUPERVISOR | ATENDENTE) — validado em código, não no banco (ver
@@ -23,6 +24,13 @@ export const auth = betterAuth({
   trustedOrigins: env.CORS_ALLOWED_ORIGINS,
   emailAndPassword: {
     enabled: true,
+    // POST /api/auth/request-password-reset (email, redirectTo) dispara este
+    // callback; `url` já é o link de callback do próprio Better Auth
+    // (/reset-password/:token?callbackURL=...), que ao ser clicado redireciona
+    // pro redirectTo do chamador com ?token= anexado.
+    sendResetPassword: async ({ user, url }) => {
+      await sendResetPasswordEmail({ to: user.email, userName: user.name, url });
+    },
   },
   plugins: [
     admin(),
