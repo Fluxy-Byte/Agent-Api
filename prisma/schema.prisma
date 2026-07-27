@@ -110,6 +110,7 @@ model Organization {
   targets          Target[]
   tickets          Ticket[]
   ticketCounter    TicketCounter?
+  campaigns        Campaign[]
   auditLogs        AuditLog[]
   errorLogs        ErrorLog[]
 
@@ -224,6 +225,7 @@ model WhatsappChannel {
 
   serviceIsland ServiceIsland?
   targets       Target[]
+  campaigns     Campaign[]
 
   @@index([organizationId])
   @@index([agentId])
@@ -316,6 +318,7 @@ model Target {
 
   messagingSessions MessagingSession[]
   tickets           Ticket[]
+  campaignTargets   CampaignTarget[]
 
   @@unique([organizationId, whatsappChannelId, waId])
   @@index([organizationId])
@@ -351,6 +354,91 @@ model MessagingSession {
 
   @@index([targetId])
   @@index([whatsappChannelId])
+}
+
+// ---------- CAMPANHA (DISPARO ATIVO DE TEMPLATE) ----------
+
+enum CampaignStatus {
+  PROCESSING
+  COMPLETED
+}
+
+enum CampaignTargetStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum CampaignDispatchType {
+  CSV
+  MANUAL
+}
+
+/// Disparo em massa (ou manual, de 1 contato) de um template aprovado da Meta.
+/// Criada de forma síncrona pelo Agent-Api (já retorna com id) e enfileirada no
+/// Campaign-Worker, que processa contato a contato e vai incrementando os
+/// contadores abaixo até virar COMPLETED.
+model Campaign {
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  whatsappChannelId String
+  whatsappChannel   WhatsappChannel @relation(fields: [whatsappChannelId], references: [id], onDelete: Cascade)
+
+  name         String
+  category     String?
+  templateName String
+  language     String
+
+  status       CampaignStatus       @default(PROCESSING)
+  dispatchType CampaignDispatchType @default(CSV)
+
+  /// Quantidade de contatos que a campanha deveria atingir — definido na criação
+  /// (síncrona), antes do worker processar o lote. totalContacts é o quanto já
+  /// foi processado (sucesso ou falha).
+  expectedContacts Int @default(0)
+  totalContacts    Int @default(0)
+  totalSent        Int @default(0)
+  totalFailures    Int @default(0)
+
+  /// Quem disparou, vindo da sessão do Agent Console.
+  createdByUserId String?
+  createdByName   String?
+  createdByEmail  String?
+
+  sentAt    DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  targets CampaignTarget[]
+
+  @@index([organizationId])
+  @@index([whatsappChannelId])
+}
+
+/// Uma linha por contato disparado dentro de uma campanha.
+model CampaignTarget {
+  id         String               @id @default(cuid())
+  campaignId String
+  campaign   Campaign             @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  targetId   String
+  target     Target               @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  status     CampaignTargetStatus @default(SENT)
+
+  /// Corpo cru da resposta da Meta (debug de falhas).
+  response String?
+  /// wamid retornado pela Meta ao enviar o template.
+  messageId String?
+  /// Snapshot das variáveis (header/body/button) preenchidas para esse contato —
+  /// usado para reexibir o template completo no histórico de conversa.
+  variables Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId])
+  @@index([messageId])
 }
 
 // ---------- TICKET (ATENDIMENTO HUMANO) ----------

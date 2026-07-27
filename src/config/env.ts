@@ -44,6 +44,10 @@ const envSchema = z.object({
   /// telefone cadastrados em um WABA) — mesmo token do Inbound-Service.
   META_ACCESS_TOKEN: z.string().min(1),
   META_GRAPH_API_VERSION: z.string().default("v21.0"),
+
+  /// Base URL do Campaign-Worker (POST /campaign/send) — autenticado com o
+  /// mesmo INTERNAL_API_KEY acima.
+  CAMPAIGN_WORKER_URL: z.string().min(1),
 });
 
 const parsed = envSchema.safeParse(process.env);

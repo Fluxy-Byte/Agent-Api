@@ -1,6 +1,6 @@
 import { ConflictError, NotFoundError, ValidationError } from "../../domain/errors/app-error";
 import { prisma } from "../../infrastructure/database/prisma/client";
-import { listWabaPhoneNumbers } from "../../infrastructure/meta/meta-graph-client";
+import { getTemplateVariableCount, listWabaPhoneNumbers, listWabaTemplates } from "../../infrastructure/meta/meta-graph-client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
 import type {
   BulkCreateWhatsappChannelInput,
@@ -154,5 +154,24 @@ export const whatsappChannelService = {
     });
 
     return { created, skipped };
+  },
+
+  /// Templates aprovados/ativos no WABA da Meta ligado a este canal, já com a
+  /// contagem de variáveis por componente — usado na etapa de escolha de
+  /// template do disparo de campanha.
+  async listTemplates(user: AuthUser, id: string) {
+    const channel = await this.getById(user, id);
+
+    const templates = await listWabaTemplates(channel.wabaId);
+
+    return templates.map((t) => ({
+      id: t.id,
+      name: t.name,
+      category: t.category,
+      language: t.language,
+      status: t.status,
+      components: t.components,
+      variableCount: getTemplateVariableCount(t.components),
+    }));
   },
 };

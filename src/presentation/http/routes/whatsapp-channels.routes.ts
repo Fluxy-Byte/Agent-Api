@@ -45,6 +45,13 @@ whatsappChannelsRouter.post(
   }),
 );
 
+whatsappChannelsRouter.get(
+  "/:id/templates",
+  apiHandler({ action: PermissionAction.CAMPAIGNS_VIEW }, async (req, _res, user) => {
+    return whatsappChannelService.listTemplates(user, String(req.params.id));
+  }),
+);
+
 whatsappChannelsRouter.post(
   "/waba-lookup",
   apiHandler({ action: PermissionAction.WABAS_WRITE }, async (req) => {

@@ -14,6 +14,8 @@ export const PERMISSION_MATRIX: Record<MemberRole, PermissionAction[]> = {
     PermissionAction.CONTACTS_WRITE,
     PermissionAction.QUEUES_VIEW,
     PermissionAction.QUEUES_WRITE,
+    PermissionAction.CAMPAIGNS_VIEW,
+    PermissionAction.CAMPAIGNS_WRITE,
   ],
   GERENTE: [
     PermissionAction.AGENTS_VIEW,
@@ -26,6 +28,8 @@ export const PERMISSION_MATRIX: Record<MemberRole, PermissionAction[]> = {
     PermissionAction.QUEUES_WRITE,
     PermissionAction.CONTACTS_VIEW,
     PermissionAction.CONTACTS_WRITE,
+    PermissionAction.CAMPAIGNS_VIEW,
+    PermissionAction.CAMPAIGNS_WRITE,
     PermissionAction.ACCESS_VIEW,
     PermissionAction.ACCESS_WRITE,
     PermissionAction.COMPANIES_MANAGE_OWN,

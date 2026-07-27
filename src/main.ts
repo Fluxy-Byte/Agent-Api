@@ -8,6 +8,7 @@ import { pingMongo } from "./infrastructure/database/mongo/client";
 import { prisma } from "./infrastructure/database/prisma/client";
 import { getRabbitChannel } from "./infrastructure/queue/rabbitmq/connection";
 import { agentsRouter } from "./presentation/http/routes/agents.routes";
+import { campaignsRouter } from "./presentation/http/routes/campaigns.routes";
 import { companiesRouter } from "./presentation/http/routes/companies.routes";
 import { internalRouter } from "./presentation/http/routes/internal.routes";
 import { serviceIslandsRouter } from "./presentation/http/routes/service-islands.routes";
@@ -40,6 +41,7 @@ async function main() {
   app.use("/api/wc", whatsappChannelsRouter);
   app.use("/api/service-islands", serviceIslandsRouter);
   app.use("/api/targets", targetsRouter);
+  app.use("/api/campaigns", campaignsRouter);
   app.use("/internal", internalRouter);
 
   app.get("/health", async (_req, res) => {
