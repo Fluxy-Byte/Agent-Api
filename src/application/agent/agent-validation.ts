@@ -23,6 +23,10 @@ export const createAgentSchema = z.object({
   errorEnabled: z.boolean().optional(),
 
   defaultQueueId: z.string().trim().min(1).nullable().optional(),
+
+  personality: optionalMessage,
+  ragEnabled: z.boolean().optional(),
+  ragChunkSize: z.number().int().min(100).max(4000).optional(),
 });
 
 export const updateAgentSchema = createAgentSchema.partial();

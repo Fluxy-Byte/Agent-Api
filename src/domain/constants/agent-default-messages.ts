@@ -13,6 +13,11 @@ export const AGENT_DEFAULT_MESSAGES = {
   errorMessage: "Desculpe, tivemos um problema ao processar sua mensagem. Tente novamente em instantes.",
 } as const;
 
+/// Default de Agent.personality — mesmo princípio das mensagens acima (só
+/// prefill de conveniência, sempre gravado explícito no banco).
+export const DEFAULT_AGENT_PERSONALITY =
+  "Comunique-se de forma cordial, clara e objetiva, como um atendente profissional e prestativo.";
+
 /// Campos obrigatórios (sem switch de desativação) — o EscopoSaas é explícito:
 /// só estes três. Os outros quatro (welcome/outOfHours/closing/error) têm par
 /// mensagem+enabled, e quando enabled=false "a Inteligência Artificial pode

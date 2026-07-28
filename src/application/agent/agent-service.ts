@@ -1,4 +1,4 @@
-import { AGENT_DEFAULT_MESSAGES } from "../../domain/constants/agent-default-messages";
+import { AGENT_DEFAULT_MESSAGES, DEFAULT_AGENT_PERSONALITY } from "../../domain/constants/agent-default-messages";
 import { NotFoundError, ValidationError } from "../../domain/errors/app-error";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
@@ -78,6 +78,10 @@ export const agentService = {
         errorEnabled: input.errorEnabled ?? true,
 
         defaultQueueId: input.defaultQueueId ?? null,
+
+        personality: resolveToggleable(input.personality, DEFAULT_AGENT_PERSONALITY),
+        ragEnabled: input.ragEnabled ?? false,
+        ragChunkSize: input.ragChunkSize ?? null,
       },
     });
   },
@@ -129,6 +133,10 @@ export const agentService = {
         errorEnabled: input.errorEnabled ?? existing.errorEnabled,
 
         defaultQueueId: input.defaultQueueId === undefined ? existing.defaultQueueId : input.defaultQueueId,
+
+        personality: input.personality ?? existing.personality,
+        ragEnabled: input.ragEnabled ?? existing.ragEnabled,
+        ragChunkSize: input.ragChunkSize === undefined ? existing.ragChunkSize : input.ragChunkSize,
       },
     });
   },

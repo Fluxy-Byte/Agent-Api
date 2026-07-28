@@ -195,13 +195,59 @@ model Agent {
   defaultQueueId String?
   defaultQueue   Queue?  @relation(fields: [defaultQueueId], references: [id], onDelete: SetNull)
 
+  /// Molda o tom/estilo de comunicação do agente — sempre injetado no prompt de
+  /// geração de resposta. Nullable, mas a aplicação sempre preenche um default
+  /// na criação (nunca fica vazio de verdade), igual às mensagens acima.
+  personality String?
+
+  /// Liga a busca em base de conhecimento (RAG) pros workers Python genéricos
+  /// (ex: AI-Worker/max) — quando true, o worker inclui a tool de consulta à
+  /// base vetorial e o agente consulta os RagDocument anexados abaixo.
+  ragEnabled   Boolean @default(false)
+  /// Tamanho (em caracteres) usado ao quebrar os documentos anexados em chunks
+  /// — só relevante quando ragEnabled=true.
+  ragChunkSize Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   whatsappChannels WhatsappChannel[]
+  ragDocuments     RagDocument[]
 
   @@index([organizationId])
   @@index([defaultQueueId])
+}
+
+// ---------- RAG (BASE DE CONHECIMENTO) ----------
+
+enum RagDocumentStatus {
+  PROCESSING
+  READY
+  FAILED
+}
+
+/// Metadados de um documento anexado à base de conhecimento de um agente — o
+/// conteúdo (chunks + embeddings) mora só no Postgres+pgvector que o AI-Worker
+/// já usa (collection documentos_<nome-do-agente>), nunca aqui. Só o worker
+/// Python (via HTTP interno) lê/escreve chunks de verdade; este model é só o
+/// rastro/status pra UI mostrar progresso.
+model RagDocument {
+  id             String            @id @default(cuid())
+  agentId        String
+  agent          Agent             @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  organizationId String
+  fileName       String
+  s3Key          String
+  categories     String[]
+  chunkSize      Int
+  status         RagDocumentStatus @default(PROCESSING)
+  chunkCount     Int?
+  errorMessage   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([agentId])
 }
 
 // ---------- WHATSAPP CHANNEL ----------

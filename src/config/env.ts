@@ -49,6 +49,10 @@ const envSchema = z.object({
   /// mesmo INTERNAL_API_KEY acima.
   CAMPAIGN_WORKER_URL: z.string().min(1),
 
+  /// Base URL do AI-Worker/max (POST /rag/ingest) — autenticado com o mesmo
+  /// INTERNAL_API_KEY acima.
+  MAX_WORKER_URL: z.string().min(1),
+
   /// Conta Gmail usada pra enviar o e-mail de redefinição de senha (Better
   /// Auth emailAndPassword.sendResetPassword) — PASSWORD_GOOGLE é uma senha de
   /// app do Gmail (não a senha normal da conta).
