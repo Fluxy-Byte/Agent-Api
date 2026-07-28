@@ -6,7 +6,7 @@ export const serviceIslandService = {
   async list(user: AuthUser) {
     return prisma.serviceIsland.findMany({
       where: { organizationId: user.activeOrganizationId! },
-      include: { whatsappChannel: true, queues: true },
+      include: { whatsappChannel: true, queues: true, closeTags: true },
       orderBy: { createdAt: "desc" },
     });
   },
@@ -14,15 +14,22 @@ export const serviceIslandService = {
   async getById(user: AuthUser, id: string) {
     const island = await prisma.serviceIsland.findFirst({
       where: { id, organizationId: user.activeOrganizationId! },
-      include: { whatsappChannel: true, queues: { include: { members: { include: { user: true } } } } },
+      include: {
+        whatsappChannel: true,
+        queues: { include: { members: { include: { user: true } } } },
+        closeTags: { orderBy: { createdAt: "asc" } },
+      },
     });
     if (!island) throw new NotFoundError("Ilha de atendimento não encontrada.");
     return island;
   },
 
-  async rename(user: AuthUser, id: string, name: string) {
+  async rename(user: AuthUser, id: string, name: string, requireCloseTag?: boolean) {
     await this.getById(user, id);
-    return prisma.serviceIsland.update({ where: { id }, data: { name } });
+    return prisma.serviceIsland.update({
+      where: { id },
+      data: { name, ...(requireCloseTag === undefined ? {} : { requireCloseTag }) },
+    });
   },
 
   /// Tickets de todas as filas desta ilha — usado na tela da ilha pra listar
@@ -37,6 +44,7 @@ export const serviceIslandService = {
         target: { select: { id: true, name: true, waId: true } },
         queue: { select: { id: true, name: true } },
         assignedUser: { select: { id: true, name: true, email: true } },
+        closeTag: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: "desc" },
     });

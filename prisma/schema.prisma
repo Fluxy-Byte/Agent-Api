@@ -289,12 +289,34 @@ model ServiceIsland {
   whatsappChannel   WhatsappChannel @relation(fields: [whatsappChannelId], references: [id], onDelete: Cascade)
   name              String
 
+  /// Se true, o Desk-Worker/Desk-API recusa encerrar um ticket de qualquer fila
+  /// desta ilha sem uma TicketCloseTag selecionada.
+  requireCloseTag Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  queues Queue[]
+  queues    Queue[]
+  closeTags TicketCloseTag[]
 
   @@index([organizationId])
+}
+
+/// Tag de fechamento cadastrada por ilha de atendimento — gerida no Agent
+/// Console, usada pelo atendente no Desk Console ao encerrar um ticket.
+model TicketCloseTag {
+  id              String        @id @default(cuid())
+  serviceIslandId String
+  serviceIsland   ServiceIsland @relation(fields: [serviceIslandId], references: [id], onDelete: Cascade)
+  name            String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tickets Ticket[]
+
+  @@unique([serviceIslandId, name])
+  @@index([serviceIslandId])
 }
 
 model Queue {
@@ -533,6 +555,12 @@ model Ticket {
 
   closeReason TicketCloseReason?
 
+  /// Tag de fechamento escolhida pelo atendente (opcional, a menos que a ilha
+  /// exija — ver ServiceIsland.requireCloseTag). SetNull preserva o ticket se
+  /// a tag for excluída depois.
+  closeTagId String?
+  closeTag   TicketCloseTag? @relation(fields: [closeTagId], references: [id], onDelete: SetNull)
+
   /// Throttle do reenvio de transferMessage enquanto o ticket está WAITING.
   lastWaitingMessageSentAt DateTime?
 
@@ -547,6 +575,7 @@ model Ticket {
   @@index([targetId])
   @@index([messagingSessionId])
   @@index([assignedUserId])
+  @@index([closeTagId])
 }
 
 /// Guarda o último ticketNumber emitido por organização. Incrementado via
