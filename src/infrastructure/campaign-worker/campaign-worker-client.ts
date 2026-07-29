@@ -16,12 +16,20 @@ export interface CampaignWorkerSendPayload {
   organizationId: string;
   whatsappChannelId: string;
   phoneNumberId: string;
+  wabaId: string;
+  serviceIslandId: string;
+  agentId: string;
+  agentName: string;
   templateName: string;
   language: string;
   category: string;
   templateHeaderText?: string;
   templateBodyText?: string;
   contacts: CampaignWorkerContactInput[];
+  /// Se preenchido, o Campaign-Worker publica desk.ticket.create pra cada
+  /// contato enviado com sucesso (ver process-campaign-send.ts).
+  routeToQueueId?: string;
+  routeToUserId?: string;
 }
 
 /// Chama o Campaign-Worker pra enfileirar o disparo em massa — a Campaign já

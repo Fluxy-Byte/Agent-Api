@@ -35,8 +35,9 @@ model User {
   accounts         Account[]
   members          Member[]
   invitations      Invitation[]
-  queueMemberships QueueMember[]
-  assignedTickets  Ticket[]
+  queueMemberships    QueueMember[]
+  assignedTickets     Ticket[]
+  campaignsRoutedToMe Campaign[] @relation("CampaignRouteToUser")
 
   @@unique([email])
   @@map("user")
@@ -335,9 +336,10 @@ model Queue {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members          QueueMember[]
-  tickets          Ticket[]
-  defaultForAgents Agent[]
+  members             QueueMember[]
+  tickets             Ticket[]
+  defaultForAgents    Agent[]
+  campaignsRoutedHere Campaign[] @relation("CampaignRouteToQueue")
 
   @@index([serviceIslandId])
 }
@@ -475,6 +477,16 @@ model Campaign {
   createdByName   String?
   createdByEmail  String?
 
+  /// Se preenchido, cada contato atingido com sucesso vira um Ticket nesta
+  /// fila (via desk.ticket.create, mesmo mecanismo do handoff de IA) e o
+  /// Target correspondente vira HUMAN em vez de continuar na IA.
+  routeToQueueId String?
+  routeToQueue   Queue?  @relation("CampaignRouteToQueue", fields: [routeToQueueId], references: [id], onDelete: SetNull)
+  /// Só usado se routeToQueueId estiver preenchido — atendente já assume o
+  /// ticket (IN_PROGRESS) em vez de cair WAITING na fila.
+  routeToUserId String?
+  routeToUser   User?   @relation("CampaignRouteToUser", fields: [routeToUserId], references: [id], onDelete: SetNull)
+
   sentAt    DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -483,6 +495,8 @@ model Campaign {
 
   @@index([organizationId])
   @@index([whatsappChannelId])
+  @@index([routeToQueueId])
+  @@index([routeToUserId])
 }
 
 /// Uma linha por contato disparado dentro de uma campanha.

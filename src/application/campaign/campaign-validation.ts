@@ -22,6 +22,12 @@ export const createCampaignSchema = z.object({
   templateHeaderText: z.string().optional(),
   templateBodyText: z.string().optional(),
   contacts: z.array(campaignContactSchema).min(1, "Envie ao menos 1 contato."),
+  /// Se preenchido, cada contato atingido com sucesso vira um Ticket nesta
+  /// fila (Target sai de AI e vira HUMAN) em vez de continuar com a IA.
+  routeToQueueId: z.string().trim().min(1).optional(),
+  /// Só válido junto de routeToQueueId — atendente específico assume o
+  /// ticket direto (IN_PROGRESS) em vez de cair WAITING na fila.
+  routeToUserId: z.string().trim().min(1).optional(),
 });
 
 export const listCampaignsQuerySchema = z.object({

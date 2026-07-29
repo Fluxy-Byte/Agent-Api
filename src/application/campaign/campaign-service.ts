@@ -7,10 +7,33 @@ import type { CreateCampaignInput, ListCampaignsQuery } from "./campaign-validat
 async function resolveWhatsappChannel(id: string, organizationId: string) {
   const channel = await prisma.whatsappChannel.findFirst({
     where: { id, organizationId },
-    include: { agent: true },
+    include: { agent: true, serviceIsland: true },
   });
   if (!channel) throw new NotFoundError("WhatsApp Channel não encontrado.");
+  if (!channel.serviceIsland) throw new NotFoundError("Ilha de atendimento do canal não encontrada.");
   return channel;
+}
+
+/// routeToQueueId precisa ser uma fila da ilha deste canal; routeToUserId
+/// (se vier) precisa ser um atendente daquela fila especificamente — evita
+/// atribuir a campanha a alguém sem acesso pra ver o ticket depois.
+async function assertRouteToHumanIsValid(
+  serviceIslandId: string,
+  routeToQueueId: string | undefined,
+  routeToUserId: string | undefined,
+) {
+  if (!routeToQueueId) {
+    if (routeToUserId) throw new ValidationError("routeToUserId exige routeToQueueId.");
+    return;
+  }
+
+  const queue = await prisma.queue.findFirst({ where: { id: routeToQueueId, serviceIslandId } });
+  if (!queue) throw new ValidationError("Fila de destino inválida para este canal.");
+
+  if (routeToUserId) {
+    const member = await prisma.queueMember.findFirst({ where: { queueId: routeToQueueId, userId: routeToUserId } });
+    if (!member) throw new ValidationError("O atendente selecionado não pertence a essa fila.");
+  }
 }
 
 export const campaignService = {
@@ -25,6 +48,8 @@ export const campaignService = {
     const semTelefone = contacts.some((c) => !c.phone);
     if (semTelefone) throw new ValidationError("Todo contato precisa ter telefone preenchido.");
 
+    await assertRouteToHumanIsValid(channel.serviceIsland!.id, input.routeToQueueId, input.routeToUserId);
+
     const campaign = await prisma.campaign.create({
       data: {
         organizationId: user.activeOrganizationId!,
@@ -38,6 +63,8 @@ export const campaignService = {
         createdByUserId: user.id,
         createdByName: user.name,
         createdByEmail: user.email,
+        routeToQueueId: input.routeToQueueId,
+        routeToUserId: input.routeToUserId,
       },
     });
 
@@ -46,12 +73,18 @@ export const campaignService = {
       organizationId: user.activeOrganizationId!,
       whatsappChannelId: channel.id,
       phoneNumberId: channel.phoneNumberId,
+      wabaId: channel.wabaId,
+      serviceIslandId: channel.serviceIsland!.id,
+      agentId: channel.agent.id,
+      agentName: channel.agent.name,
       templateName: input.templateName,
       language: input.language,
       category: input.category,
       templateHeaderText: input.templateHeaderText,
       templateBodyText: input.templateBodyText,
       contacts,
+      routeToQueueId: input.routeToQueueId,
+      routeToUserId: input.routeToUserId,
     });
 
     return this.toListItem(campaign, channel);
