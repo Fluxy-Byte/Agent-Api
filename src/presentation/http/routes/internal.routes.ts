@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
+import { campaignService } from "../../../application/campaign/campaign-service";
+import { env } from "../../../config/env";
 import { ragDocumentService } from "../../../application/rag-document/rag-document-service";
+import { AppError } from "../../../domain/errors/app-error";
 import { prisma } from "../../../infrastructure/database/prisma/client";
 import { requireInternalApiKey } from "../middlewares/internal-auth";
 
@@ -8,6 +11,11 @@ export const internalRouter = Router();
 internalRouter.use(requireInternalApiKey);
 
 const metadataSchema = z.object({ metadata: z.record(z.string(), z.unknown()) });
+
+const metropoleWelcomeSchema = z.object({
+  phone: z.string().trim().min(8),
+  name: z.string().trim().min(1),
+});
 
 const ragDocumentStatusSchema = z.object({
   status: z.enum(["READY", "FAILED"]),
@@ -49,6 +57,44 @@ internalRouter.patch("/targets/:id/metadata", async (req, res) => {
   });
 
   res.json({ success: true, result: updated, message: null });
+});
+
+/// Chamada pela Metrópole (server-to-server) sempre que um lead novo se
+/// cadastra com WhatsApp pelo formulário de contato do site — dispara a
+/// campanha ativa de boas-vindas (template configurado via env) pro contato.
+/// Sem sessão de usuário: o canal/template vêm da config do ambiente, não do
+/// corpo da requisição, pra a Metrópole não poder disparar template arbitrário.
+internalRouter.post("/campaigns/metropole-welcome", async (req, res) => {
+  const parsed = metropoleWelcomeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(422).json({ success: false, result: null, message: "Dados inválidos." });
+    return;
+  }
+
+  if (!env.METROPOLE_WHATSAPP_CHANNEL_ID) {
+    res.status(503).json({
+      success: false,
+      result: null,
+      message: "WhatsApp Channel da Metrópole ainda não configurado (METROPOLE_WHATSAPP_CHANNEL_ID).",
+    });
+    return;
+  }
+
+  try {
+    const campaign = await campaignService.triggerSystemCampaign({
+      whatsappChannelId: env.METROPOLE_WHATSAPP_CHANNEL_ID,
+      phone: parsed.data.phone,
+      name: parsed.data.name,
+      templateName: env.METROPOLE_WELCOME_TEMPLATE_NAME,
+      language: env.METROPOLE_WELCOME_TEMPLATE_LANGUAGE,
+      category: env.METROPOLE_WELCOME_TEMPLATE_CATEGORY,
+    });
+    res.status(202).json({ success: true, result: campaign, message: null });
+  } catch (error) {
+    const statusCode = error instanceof AppError ? error.statusCode : 502;
+    const message = error instanceof Error ? error.message : "Falha ao disparar a campanha de boas-vindas.";
+    res.status(statusCode).json({ success: false, result: null, message });
+  }
 });
 
 /// Chamada pelo worker Python (AI-Worker/max) ao terminar de processar (ou

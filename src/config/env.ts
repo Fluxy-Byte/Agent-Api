@@ -53,6 +53,15 @@ const envSchema = z.object({
   /// INTERNAL_API_KEY acima.
   MAX_WORKER_URL: z.string().min(1),
 
+  /// WhatsApp Channel (WABA) do agente "max"/Metrópole — preenchido só depois
+  /// que o número da Metrópole for conectado ao agente no Agent Console (ver
+  /// campaign-service.ts / internal.routes.ts POST /internal/campaigns/metropole-welcome).
+  /// Ausente/vazio = a rota responde 503 em vez de tentar disparar sem canal.
+  METROPOLE_WHATSAPP_CHANNEL_ID: z.string().optional(),
+  METROPOLE_WELCOME_TEMPLATE_NAME: z.string().default("metropole_boas_vindas"),
+  METROPOLE_WELCOME_TEMPLATE_LANGUAGE: z.string().default("pt_BR"),
+  METROPOLE_WELCOME_TEMPLATE_CATEGORY: z.enum(["MARKETING", "UTILITY", "AUTHENTICATION"]).default("MARKETING"),
+
   /// Conta Gmail usada pra enviar o e-mail de redefinição de senha (Better
   /// Auth emailAndPassword.sendResetPassword) — PASSWORD_GOOGLE é uma senha de
   /// app do Gmail (não a senha normal da conta).

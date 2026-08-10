@@ -37,6 +37,66 @@ async function assertRouteToHumanIsValid(
 }
 
 export const campaignService = {
+  /// Disparo de campanha sem sessão de usuário (chamado via /internal/*, ex:
+  /// a Metrópole avisando um novo cadastro) — mesmo desenho do create() acima
+  /// (Campaign síncrona + Campaign-Worker), só que resolve o canal só pelo id
+  /// (o caller já é confiável, autenticado por x-internal-api-key) em vez de
+  /// por organizationId de uma sessão, e sempre dispara pra 1 único contato.
+  async triggerSystemCampaign(input: {
+    whatsappChannelId: string;
+    phone: string;
+    name: string;
+    templateName: string;
+    language: string;
+    category: string;
+    createdByName?: string;
+  }) {
+    const channel = await prisma.whatsappChannel.findUnique({
+      where: { id: input.whatsappChannelId },
+      include: { agent: true, serviceIsland: true },
+    });
+    if (!channel) throw new NotFoundError("WhatsApp Channel configurado para a Metrópole não encontrado.");
+    if (!channel.serviceIsland) throw new NotFoundError("Ilha de atendimento do canal da Metrópole não encontrada.");
+
+    const campaign = await prisma.campaign.create({
+      data: {
+        organizationId: channel.organizationId,
+        whatsappChannelId: channel.id,
+        name: `Boas-vindas — ${input.name}`,
+        category: input.category,
+        templateName: input.templateName,
+        language: input.language,
+        dispatchType: "MANUAL",
+        expectedContacts: 1,
+        createdByName: input.createdByName ?? "Integração Metrópole",
+      },
+    });
+
+    await sendCampaignToWorker({
+      campaignId: campaign.id,
+      organizationId: channel.organizationId,
+      whatsappChannelId: channel.id,
+      phoneNumberId: channel.phoneNumberId,
+      wabaId: channel.wabaId,
+      serviceIslandId: channel.serviceIsland.id,
+      agentId: channel.agent.id,
+      agentName: channel.agent.name,
+      templateName: input.templateName,
+      language: input.language,
+      category: input.category,
+      contacts: [
+        {
+          phone: input.phone,
+          name: input.name,
+          parametersBody: [{ type: "text", text: input.name }],
+        },
+      ],
+    });
+
+    return this.toListItem(campaign, channel);
+  },
+
+
   /// Cria a Campaign de forma síncrona (retorna o id na hora, já com quem
   /// disparou) e só então chama o Campaign-Worker, que enfileira o envio em
   /// massa. Se a chamada ao worker falhar, a campanha fica órfã em
