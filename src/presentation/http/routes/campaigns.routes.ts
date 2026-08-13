@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { campaignService } from "../../../application/campaign/campaign-service";
-import { createCampaignSchema, listCampaignsQuerySchema } from "../../../application/campaign/campaign-validation";
+import {
+  createCampaignSchema,
+  listCampaignsFilterSchema,
+  listCampaignsQuerySchema,
+} from "../../../application/campaign/campaign-validation";
 import { PermissionAction } from "../../../domain/enums/permission-action";
 import { ValidationError } from "../../../domain/errors/app-error";
 import { apiHandler } from "../middlewares/api-handler";
@@ -15,6 +19,24 @@ campaignsRouter.get(
     if (!parsed.success) throw new ValidationError("Filtros inválidos.", parsed.error.flatten());
 
     return campaignService.list(user, parsed.data);
+  }),
+);
+
+// Precisam vir ANTES de "/:id", senão o Express casaria "stats"/"filter-options" como id.
+campaignsRouter.get(
+  "/stats",
+  apiHandler({ action: PermissionAction.CAMPAIGNS_VIEW }, async (req, _res, user) => {
+    const parsed = listCampaignsFilterSchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Filtros inválidos.", parsed.error.flatten());
+
+    return campaignService.getStats(user, parsed.data);
+  }),
+);
+
+campaignsRouter.get(
+  "/filter-options",
+  apiHandler({ action: PermissionAction.CAMPAIGNS_VIEW }, async (_req, _res, user) => {
+    return campaignService.getFilterOptions(user);
   }),
 );
 

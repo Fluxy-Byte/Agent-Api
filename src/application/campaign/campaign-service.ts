@@ -1,9 +1,29 @@
+import type { Prisma } from "../../../generated/prisma/client";
 import { NotFoundError, ValidationError } from "../../domain/errors/app-error";
 import { sendCampaignToWorker } from "../../infrastructure/campaign-worker/campaign-worker-client";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import { listWabaTemplates } from "../../infrastructure/meta/meta-graph-client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
-import type { CreateCampaignInput, ListCampaignsQuery } from "./campaign-validation";
+import type { CreateCampaignInput, ListCampaignsFilter, ListCampaignsQuery } from "./campaign-validation";
+
+function buildCampaignWhere(user: AuthUser, filter: ListCampaignsFilter): Prisma.CampaignWhereInput {
+  return {
+    organizationId: user.activeOrganizationId!,
+    ...(filter.whatsappChannelId ? { whatsappChannelId: filter.whatsappChannelId } : {}),
+    ...(filter.agentId ? { whatsappChannel: { agentId: filter.agentId } } : {}),
+    ...(filter.search ? { name: { contains: filter.search, mode: "insensitive" } } : {}),
+    ...(filter.status ? { status: filter.status } : {}),
+    ...(filter.templateName ? { templateName: filter.templateName } : {}),
+    ...(filter.startDate || filter.endDate
+      ? {
+          sentAt: {
+            ...(filter.startDate ? { gte: filter.startDate } : {}),
+            ...(filter.endDate ? { lte: filter.endDate } : {}),
+          },
+        }
+      : {}),
+  };
+}
 
 async function resolveWhatsappChannel(id: string, organizationId: string) {
   const channel = await prisma.whatsappChannel.findFirst({
@@ -223,17 +243,13 @@ export const campaignService = {
   },
 
   async list(user: AuthUser, query: ListCampaignsQuery) {
-    const where = {
-      organizationId: user.activeOrganizationId!,
-      ...(query.whatsappChannelId ? { whatsappChannelId: query.whatsappChannelId } : {}),
-      ...(query.agentId ? { whatsappChannel: { agentId: query.agentId } } : {}),
-    };
+    const where = buildCampaignWhere(user, query);
 
     const [rows, total] = await Promise.all([
       prisma.campaign.findMany({
         where,
         include: { whatsappChannel: { include: { agent: true } } },
-        orderBy: { sentAt: "desc" },
+        orderBy: { sentAt: query.sortDir },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
       }),
@@ -246,6 +262,49 @@ export const campaignService = {
       page: query.page,
       pageSize: query.pageSize,
     };
+  },
+
+  /// Métricas da fileira de cards do topo da tela de Campanhas — mesmos
+  /// filtros de `list()` (sem paginação), sempre recalculadas na hora.
+  async getStats(user: AuthUser, filter: ListCampaignsFilter) {
+    const where = buildCampaignWhere(user, filter);
+
+    const [totalCampaigns, completedCampaigns, aggregates, campaignIds] = await Promise.all([
+      prisma.campaign.count({ where }),
+      prisma.campaign.count({ where: { ...where, status: "COMPLETED" } }),
+      prisma.campaign.aggregate({ where, _sum: { totalContacts: true, totalFailures: true } }),
+      prisma.campaign.findMany({ where, select: { id: true } }),
+    ]);
+
+    const uniqueContactRows =
+      campaignIds.length > 0
+        ? await prisma.campaignTarget.findMany({
+            where: { campaignId: { in: campaignIds.map((c) => c.id) } },
+            distinct: ["targetId"],
+            select: { targetId: true },
+          })
+        : [];
+
+    return {
+      totalCampaigns,
+      completedCampaigns,
+      totalMessagesSent: aggregates._sum.totalContacts ?? 0,
+      totalFailures: aggregates._sum.totalFailures ?? 0,
+      uniqueContacts: uniqueContactRows.length,
+    };
+  },
+
+  /// Nomes de template já usados pela empresa — popula o select "Template"
+  /// do filtro (não é a lista de templates cadastrados na Meta, é só o que já
+  /// foi disparado alguma vez).
+  async getFilterOptions(user: AuthUser) {
+    const rows = await prisma.campaign.findMany({
+      where: { organizationId: user.activeOrganizationId! },
+      distinct: ["templateName"],
+      select: { templateName: true },
+      orderBy: { templateName: "asc" },
+    });
+    return { templates: rows.map((r) => r.templateName) };
   },
 
   async getById(user: AuthUser, id: string) {

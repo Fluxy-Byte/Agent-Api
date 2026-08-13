@@ -30,12 +30,22 @@ export const createCampaignSchema = z.object({
   routeToUserId: z.string().trim().min(1).optional(),
 });
 
-export const listCampaignsQuerySchema = z.object({
+export const listCampaignsFilterSchema = z.object({
   agentId: z.string().trim().optional(),
   whatsappChannelId: z.string().trim().optional(),
+  search: z.string().trim().optional(),
+  status: z.enum(["PROCESSING", "COMPLETED"]).optional(),
+  templateName: z.string().trim().optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+});
+
+export const listCampaignsQuerySchema = listCampaignsFilterSchema.extend({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  sortDir: z.enum(["asc", "desc"]).default("desc"),
 });
 
 export type CreateCampaignInput = z.infer<typeof createCampaignSchema>;
+export type ListCampaignsFilter = z.infer<typeof listCampaignsFilterSchema>;
 export type ListCampaignsQuery = z.infer<typeof listCampaignsQuerySchema>;

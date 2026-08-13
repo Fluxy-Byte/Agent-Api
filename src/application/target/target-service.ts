@@ -1,34 +1,39 @@
-import type { Prisma } from "../../../generated/prisma/client";
+import { Prisma } from "../../../generated/prisma/client";
 import { MESSAGES_COLLECTION, type MessageDocument } from "../../domain/contracts/message-document";
-import { NotFoundError } from "../../domain/errors/app-error";
+import { ConflictError, NotFoundError } from "../../domain/errors/app-error";
 import { getMongoDb } from "../../infrastructure/database/mongo/client";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
-import type { HistoryQuery, ListTargetsQuery } from "./target-validation";
+import type { CreateTargetInput, HistoryQuery, ListTargetsFilter, ListTargetsQuery } from "./target-validation";
+
+function buildTargetWhere(user: AuthUser, filter: ListTargetsFilter): Prisma.TargetWhereInput {
+  return {
+    organizationId: user.activeOrganizationId!,
+    ...(filter.agentId ? { whatsappChannel: { agentId: filter.agentId } } : {}),
+    ...(filter.name ? { name: { contains: filter.name, mode: "insensitive" } } : {}),
+    ...(filter.phone ? { waId: { contains: filter.phone } } : {}),
+    ...(filter.email ? { email: { contains: filter.email, mode: "insensitive" } } : {}),
+    ...(filter.status ? { status: filter.status } : {}),
+    ...(filter.startDate || filter.endDate
+      ? {
+          lastInteractionAt: {
+            ...(filter.startDate ? { gte: filter.startDate } : {}),
+            ...(filter.endDate ? { lte: filter.endDate } : {}),
+          },
+        }
+      : {}),
+  };
+}
 
 export const targetService = {
   async list(user: AuthUser, query: ListTargetsQuery) {
-    const where: Prisma.TargetWhereInput = {
-      organizationId: user.activeOrganizationId!,
-      ...(query.agentId ? { whatsappChannel: { agentId: query.agentId } } : {}),
-      ...(query.name ? { name: { contains: query.name, mode: "insensitive" } } : {}),
-      ...(query.phone ? { waId: { contains: query.phone } } : {}),
-      ...(query.email ? { email: { contains: query.email, mode: "insensitive" } } : {}),
-      ...(query.startDate || query.endDate
-        ? {
-            lastInteractionAt: {
-              ...(query.startDate ? { gte: query.startDate } : {}),
-              ...(query.endDate ? { lte: query.endDate } : {}),
-            },
-          }
-        : {}),
-    };
+    const where = buildTargetWhere(user, query);
 
     const [items, total] = await Promise.all([
       prisma.target.findMany({
         where,
         include: { whatsappChannel: { include: { agent: true } } },
-        orderBy: { lastInteractionAt: "desc" },
+        orderBy: { [query.sortBy]: query.sortDir },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
       }),
@@ -36,6 +41,76 @@ export const targetService = {
     ]);
 
     return { items, total, page: query.page, pageSize: query.pageSize };
+  },
+
+  /// Métricas da fileira de cards do topo da tela de Contatos — mesmos
+  /// filtros de `list()` (sem paginação), sempre recalculadas na hora.
+  async getStats(user: AuthUser, filter: ListTargetsFilter) {
+    const where = buildTargetWhere(user, filter);
+    const organizationId = user.activeOrganizationId!;
+
+    const [total, active, lastInteraction, topChannel] = await Promise.all([
+      prisma.target.count({ where }),
+      prisma.target.count({ where: { ...where, status: { not: "FINISHED" } } }),
+      prisma.target.findFirst({ where, orderBy: { lastInteractionAt: "desc" }, select: { lastInteractionAt: true } }),
+      prisma.target.groupBy({
+        by: ["whatsappChannelId"],
+        where,
+        _count: { _all: true },
+        orderBy: { _count: { whatsappChannelId: "desc" } },
+        take: 1,
+      }),
+    ]);
+
+    let primaryAgentName: string | null = null;
+    if (topChannel.length > 0) {
+      const channel = await prisma.whatsappChannel.findUnique({
+        where: { id: topChannel[0].whatsappChannelId },
+        include: { agent: { select: { name: true } } },
+      });
+      primaryAgentName = channel?.agent.name ?? null;
+    }
+
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const db = await getMongoDb();
+    const interactionsToday = await db
+      .collection<MessageDocument>(MESSAGES_COLLECTION)
+      .countDocuments({ organizationId, createdAt: { gte: since24h } });
+
+    return {
+      total,
+      active,
+      interactionsToday,
+      lastInteractionAt: lastInteraction?.lastInteractionAt ?? null,
+      primaryAgentName,
+    };
+  },
+
+  /// Cadastro manual de contato (fora do fluxo normal, que é via webhook
+  /// inbound ou disparo de campanha) — usado pelo botão "Novo contato".
+  async create(user: AuthUser, input: CreateTargetInput) {
+    const channel = await prisma.whatsappChannel.findFirst({
+      where: { id: input.whatsappChannelId, organizationId: user.activeOrganizationId! },
+    });
+    if (!channel) throw new NotFoundError("WhatsApp Channel não encontrado.");
+
+    try {
+      return await prisma.target.create({
+        data: {
+          organizationId: user.activeOrganizationId!,
+          whatsappChannelId: channel.id,
+          waId: input.phone,
+          name: input.name || undefined,
+          email: input.email || undefined,
+        },
+        include: { whatsappChannel: { include: { agent: true } } },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new ConflictError("Já existe um contato com esse telefone neste canal.");
+      }
+      throw error;
+    }
   },
 
   async getById(user: AuthUser, id: string) {
