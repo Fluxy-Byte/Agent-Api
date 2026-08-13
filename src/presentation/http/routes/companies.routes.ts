@@ -14,10 +14,21 @@ const updateMemberRoleSchema = z.object({ role: z.string().min(1) });
 
 export const companiesRouter = Router();
 
+/// Nunca deixa o token de acesso à API externa sair em claro pela API
+/// (resposta HTTP ou AuditLog) — o front só precisa saber se já existe um
+/// token configurado ou não.
+function sanitizeCompany<T extends { tokenAcessApi?: string | null }>(
+  company: T,
+): Omit<T, "tokenAcessApi"> & { hasApiAccessToken: boolean } {
+  const { tokenAcessApi, ...rest } = company;
+  return { ...rest, hasApiAccessToken: Boolean(tokenAcessApi) };
+}
+
 companiesRouter.get(
   "/",
   apiHandler({ requireCompany: false }, async (_req, _res, user) => {
-    return companyService.listForUser(user);
+    const companies = await companyService.listForUser(user);
+    return companies.map(sanitizeCompany);
   }),
 );
 
@@ -28,21 +39,23 @@ companiesRouter.post(
     if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
 
     const company = await companyService.create(user, parsed.data);
+    const safeCompany = sanitizeCompany(company);
     await recordAudit(req, user, {
       action: "COMPANY_CREATED",
       resourceType: "Company",
       resourceId: company.id,
-      afterState: company,
+      afterState: safeCompany,
     });
 
-    return company;
+    return safeCompany;
   }),
 );
 
 companiesRouter.get(
   "/:id",
   apiHandler({ requireCompany: false }, async (req, _res, user) => {
-    return companyService.getById(user, String(req.params.id));
+    const company = await companyService.getById(user, String(req.params.id));
+    return sanitizeCompany(company);
   }),
 );
 
@@ -90,5 +103,35 @@ companiesRouter.put(
     });
 
     return updated;
+  }),
+);
+
+/// Gera (ou rotaciona) o token de acesso à API externa (Fluxy Agents) — mesma
+/// checagem manual de papel (GERENTE/admin) da rota de troca de acesso acima,
+/// já que é uma ação sensível de segurança, não só de escrita comum.
+companiesRouter.post(
+  "/:id/api-token",
+  apiHandler({ requireCompany: false }, async (req, _res, user) => {
+    const organizationId = String(req.params.id);
+
+    if (!user.isPlatformAdmin) {
+      const requesterMembership = await companyService
+        .listMembers(user, organizationId)
+        .then((members) => members.find((m) => m.userId === user.id));
+      if (requesterMembership?.role !== "GERENTE") {
+        throw new ForbiddenError("Apenas Gerente ou Administrador podem gerar o token de acesso à API.");
+      }
+    }
+
+    const { token } = await companyService.generateApiToken(user, organizationId);
+
+    await recordAudit(req, user, {
+      action: "API_TOKEN_GENERATED",
+      resourceType: "Company",
+      resourceId: organizationId,
+      afterState: { hasApiAccessToken: true },
+    });
+
+    return { token };
   }),
 );

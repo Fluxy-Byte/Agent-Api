@@ -14,6 +14,7 @@ import { internalRouter } from "./presentation/http/routes/internal.routes";
 import { serviceIslandsRouter } from "./presentation/http/routes/service-islands.routes";
 import { sessionRouter } from "./presentation/http/routes/session.routes";
 import { targetsRouter } from "./presentation/http/routes/targets.routes";
+import { ticketsRouter } from "./presentation/http/routes/tickets.routes";
 import { whatsappChannelsRouter } from "./presentation/http/routes/whatsapp-channels.routes";
 
 async function main() {
@@ -41,6 +42,7 @@ async function main() {
   app.use("/api/wc", whatsappChannelsRouter);
   app.use("/api/service-islands", serviceIslandsRouter);
   app.use("/api/targets", targetsRouter);
+  app.use("/api/tickets", ticketsRouter);
   app.use("/api/campaigns", campaignsRouter);
   app.use("/internal", internalRouter);
 

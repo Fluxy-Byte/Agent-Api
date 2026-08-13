@@ -13,17 +13,29 @@ import { recordAudit } from "../middlewares/audit";
 
 export const whatsappChannelsRouter = Router();
 
+/// Nunca deixa o token da Meta sair em claro pela API (resposta HTTP ou
+/// AuditLog) — o front só precisa saber se o canal já tem um token
+/// configurado ou não.
+function sanitizeChannel<T extends { metaAccessToken?: string | null }>(
+  channel: T,
+): Omit<T, "metaAccessToken"> & { hasMetaAccessToken: boolean } {
+  const { metaAccessToken, ...rest } = channel;
+  return { ...rest, hasMetaAccessToken: Boolean(metaAccessToken) };
+}
+
 whatsappChannelsRouter.get(
   "/",
   apiHandler({ action: PermissionAction.WABAS_VIEW }, async (_req, _res, user) => {
-    return whatsappChannelService.list(user);
+    const channels = await whatsappChannelService.list(user);
+    return channels.map(sanitizeChannel);
   }),
 );
 
 whatsappChannelsRouter.get(
   "/:id",
   apiHandler({ action: PermissionAction.WABAS_VIEW }, async (req, _res, user) => {
-    return whatsappChannelService.getById(user, String(req.params.id));
+    const channel = await whatsappChannelService.getById(user, String(req.params.id));
+    return sanitizeChannel(channel);
   }),
 );
 
@@ -34,14 +46,15 @@ whatsappChannelsRouter.post(
     if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
 
     const channel = await whatsappChannelService.create(user, parsed.data);
+    const safeChannel = sanitizeChannel(channel);
     await recordAudit(req, user, {
       action: "WHATSAPP_CHANNEL_CREATED",
       resourceType: "WhatsappChannel",
       resourceId: channel.id,
-      afterState: channel,
+      afterState: safeChannel,
     });
 
-    return channel;
+    return safeChannel;
   }),
 );
 
@@ -58,7 +71,7 @@ whatsappChannelsRouter.post(
     const parsed = wabaLookupSchema.safeParse(req.body);
     if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
 
-    return whatsappChannelService.lookupWaba(parsed.data.wabaId);
+    return whatsappChannelService.lookupWaba(parsed.data.wabaId, parsed.data.metaAccessToken);
   }),
 );
 
@@ -69,8 +82,9 @@ whatsappChannelsRouter.post(
     if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
 
     const result = await whatsappChannelService.bulkCreate(user, parsed.data);
+    const safeCreated = result.created.map(sanitizeChannel);
 
-    for (const channel of result.created) {
+    for (const channel of safeCreated) {
       await recordAudit(req, user, {
         action: "WHATSAPP_CHANNEL_CREATED",
         resourceType: "WhatsappChannel",
@@ -79,7 +93,7 @@ whatsappChannelsRouter.post(
       });
     }
 
-    return result;
+    return { created: safeCreated, skipped: result.skipped };
   }),
 );
 
@@ -92,15 +106,16 @@ whatsappChannelsRouter.put(
     const id = String(req.params.id);
     const before = await whatsappChannelService.getById(user, id);
     const channel = await whatsappChannelService.update(user, id, parsed.data);
+    const safeChannel = sanitizeChannel(channel);
 
     await recordAudit(req, user, {
       action: "WHATSAPP_CHANNEL_UPDATED",
       resourceType: "WhatsappChannel",
       resourceId: channel.id,
-      beforeState: before,
-      afterState: channel,
+      beforeState: sanitizeChannel(before),
+      afterState: safeChannel,
     });
 
-    return channel;
+    return safeChannel;
   }),
 );

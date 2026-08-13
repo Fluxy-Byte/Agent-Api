@@ -70,10 +70,10 @@ export const targetService = {
     const messages = await db
       .collection<MessageDocument>(MESSAGES_COLLECTION)
       .find(filter)
-      .sort({ createdAt: 1 })
+      .sort({ createdAt: -1 })
       .limit(query.limit)
       .toArray();
 
-    return messages;
+    return messages.reverse();
   },
 };

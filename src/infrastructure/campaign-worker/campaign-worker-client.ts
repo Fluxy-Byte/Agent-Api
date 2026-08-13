@@ -5,6 +5,7 @@ export interface CampaignWorkerContactInput {
   phone: string;
   email?: string;
   name?: string;
+  metadata?: Record<string, string>;
   parametersHeader?: { type: string; text: string }[];
   parametersBody?: { type: string; text: string }[];
   parametersButton?: { type: string; text: string }[];
@@ -30,6 +31,7 @@ export interface CampaignWorkerSendPayload {
   /// contato enviado com sucesso (ver process-campaign-send.ts).
   routeToQueueId?: string;
   routeToUserId?: string;
+  skipTransferMessage?: boolean;
 }
 
 /// Chama o Campaign-Worker pra enfileirar o disparo em massa — a Campaign já

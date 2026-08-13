@@ -1,6 +1,7 @@
 import { NotFoundError, ValidationError } from "../../domain/errors/app-error";
 import { sendCampaignToWorker } from "../../infrastructure/campaign-worker/campaign-worker-client";
 import { prisma } from "../../infrastructure/database/prisma/client";
+import { listWabaTemplates } from "../../infrastructure/meta/meta-graph-client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
 import type { CreateCampaignInput, ListCampaignsQuery } from "./campaign-validation";
 
@@ -36,12 +37,135 @@ async function assertRouteToHumanIsValid(
   }
 }
 
+interface DispatchTemplateParameter {
+  type: string;
+  text: string;
+}
+
+export interface DispatchContactInput {
+  phone: string;
+  name?: string;
+  email?: string;
+  /// Qualquer campo do contato que não seja telefone/nome/email vira metadado
+  /// livre — mergeado em Target.metadata pelo Campaign-Worker (nunca apaga o
+  /// que já existia).
+  metadata?: Record<string, string>;
+  parametersHeader?: DispatchTemplateParameter[];
+  parametersBody?: DispatchTemplateParameter[];
+  parametersButton?: DispatchTemplateParameter[];
+  buttonSubType?: string;
+}
+
+export interface DispatchInput {
+  organizationId: string;
+  whatsappChannelId: string;
+  campaignName: string;
+  templateName: string;
+  /// category/language são opcionais — se não vierem (caso do disparo padronizado,
+  /// que só conhece o nome do template), são resolvidos consultando a Meta.
+  category?: string;
+  language?: string;
+  dispatchType?: "CSV" | "MANUAL";
+  templateHeaderText?: string;
+  templateBodyText?: string;
+  routeToQueueId?: string;
+  routeToUserId?: string;
+  createdByUserId?: string;
+  createdByName?: string;
+  createdByEmail?: string;
+  /// Usado pelo disparo ativo do Desk — suprime a transferMessage genérica do
+  /// agente quando o ticket nasce a partir desse disparo.
+  skipTransferMessage?: boolean;
+  contacts: DispatchContactInput[];
+}
+
 export const campaignService = {
+  /// Ponto único de disparo ativo de template — usado pelo fluxo de sessão
+  /// (create, abaixo), pela integração da Metrópole (triggerSystemCampaign,
+  /// abaixo) e pela rota /internal/campaigns/dispatch (chamável por qualquer
+  /// serviço confiável, incluindo a futura API externa e o disparo pelo Desk).
+  /// Cria a Campaign de forma síncrona e só então chama o Campaign-Worker, que
+  /// enfileira o envio em massa. Se a chamada ao worker falhar, a campanha fica
+  /// órfã em PROCESSING — mesmo comportamento de falha do app antigo.
+  async dispatch(params: DispatchInput) {
+    const channel = await resolveWhatsappChannel(params.whatsappChannelId, params.organizationId);
+
+    const semTelefone = params.contacts.some((c) => !c.phone);
+    if (semTelefone) throw new ValidationError("Todo contato precisa ter telefone preenchido.");
+
+    await assertRouteToHumanIsValid(channel.serviceIsland!.id, params.routeToQueueId, params.routeToUserId);
+
+    let { category, language } = params;
+    if (!category || !language) {
+      if (!channel.metaAccessToken) {
+        throw new ValidationError("Este canal ainda não tem um token de acesso da Meta cadastrado.");
+      }
+
+      const templates = await listWabaTemplates(channel.wabaId, channel.metaAccessToken);
+      const matches = templates.filter(
+        (t) => t.name === params.templateName && t.status === "APPROVED" && (!language || t.language === language),
+      );
+
+      if (matches.length === 0) {
+        throw new ValidationError(
+          `Nenhum template aprovado chamado "${params.templateName}" foi encontrado neste canal${language ? ` no idioma ${language}` : ""}.`,
+        );
+      }
+      if (matches.length > 1) {
+        throw new ValidationError(
+          `Existem ${matches.length} templates aprovados chamados "${params.templateName}" em idiomas diferentes — informe "language" para desambiguar.`,
+        );
+      }
+
+      category = category ?? matches[0].category;
+      language = language ?? matches[0].language;
+    }
+
+    const campaign = await prisma.campaign.create({
+      data: {
+        organizationId: params.organizationId,
+        whatsappChannelId: channel.id,
+        name: params.campaignName,
+        category,
+        templateName: params.templateName,
+        language,
+        dispatchType: params.dispatchType ?? "MANUAL",
+        expectedContacts: params.contacts.length,
+        createdByUserId: params.createdByUserId,
+        createdByName: params.createdByName,
+        createdByEmail: params.createdByEmail,
+        routeToQueueId: params.routeToQueueId,
+        routeToUserId: params.routeToUserId,
+      },
+    });
+
+    await sendCampaignToWorker({
+      campaignId: campaign.id,
+      organizationId: params.organizationId,
+      whatsappChannelId: channel.id,
+      phoneNumberId: channel.phoneNumberId,
+      wabaId: channel.wabaId,
+      serviceIslandId: channel.serviceIsland!.id,
+      agentId: channel.agent.id,
+      agentName: channel.agent.name,
+      templateName: params.templateName,
+      language,
+      category,
+      templateHeaderText: params.templateHeaderText,
+      templateBodyText: params.templateBodyText,
+      contacts: params.contacts,
+      routeToQueueId: params.routeToQueueId,
+      routeToUserId: params.routeToUserId,
+      skipTransferMessage: params.skipTransferMessage,
+    });
+
+    return this.toListItem(campaign, channel);
+  },
+
   /// Disparo de campanha sem sessão de usuário (chamado via /internal/*, ex:
-  /// a Metrópole avisando um novo cadastro) — mesmo desenho do create() acima
-  /// (Campaign síncrona + Campaign-Worker), só que resolve o canal só pelo id
-  /// (o caller já é confiável, autenticado por x-internal-api-key) em vez de
-  /// por organizationId de uma sessão, e sempre dispara pra 1 único contato.
+  /// a Metrópole avisando um novo cadastro) — sempre dispara pra 1 único
+  /// contato, resolve o canal só pelo id (o caller já é confiável, autenticado
+  /// por x-internal-api-key) em vez de por organizationId de uma sessão.
   async triggerSystemCampaign(input: {
     whatsappChannelId: string;
     phone: string;
@@ -51,39 +175,18 @@ export const campaignService = {
     category: string;
     createdByName?: string;
   }) {
-    const channel = await prisma.whatsappChannel.findUnique({
-      where: { id: input.whatsappChannelId },
-      include: { agent: true, serviceIsland: true },
-    });
+    const channel = await prisma.whatsappChannel.findUnique({ where: { id: input.whatsappChannelId } });
     if (!channel) throw new NotFoundError("WhatsApp Channel configurado para a Metrópole não encontrado.");
-    if (!channel.serviceIsland) throw new NotFoundError("Ilha de atendimento do canal da Metrópole não encontrada.");
 
-    const campaign = await prisma.campaign.create({
-      data: {
-        organizationId: channel.organizationId,
-        whatsappChannelId: channel.id,
-        name: `Boas-vindas — ${input.name}`,
-        category: input.category,
-        templateName: input.templateName,
-        language: input.language,
-        dispatchType: "MANUAL",
-        expectedContacts: 1,
-        createdByName: input.createdByName ?? "Integração Metrópole",
-      },
-    });
-
-    await sendCampaignToWorker({
-      campaignId: campaign.id,
+    return this.dispatch({
       organizationId: channel.organizationId,
       whatsappChannelId: channel.id,
-      phoneNumberId: channel.phoneNumberId,
-      wabaId: channel.wabaId,
-      serviceIslandId: channel.serviceIsland.id,
-      agentId: channel.agent.id,
-      agentName: channel.agent.name,
+      campaignName: `Boas-vindas — ${input.name}`,
       templateName: input.templateName,
       language: input.language,
       category: input.category,
+      dispatchType: "MANUAL",
+      createdByName: input.createdByName ?? "Integração Metrópole",
       contacts: [
         {
           phone: input.phone,
@@ -92,62 +195,31 @@ export const campaignService = {
         },
       ],
     });
-
-    return this.toListItem(campaign, channel);
   },
 
-
-  /// Cria a Campaign de forma síncrona (retorna o id na hora, já com quem
-  /// disparou) e só então chama o Campaign-Worker, que enfileira o envio em
-  /// massa. Se a chamada ao worker falhar, a campanha fica órfã em
-  /// PROCESSING — mesmo comportamento de falha do app antigo.
+  /// Cria a Campaign a partir do formulário de sessão do Agent Console —
+  /// category/language já vêm explícitos do frontend (que consultou a Meta
+  /// antes), então dispatch() não precisa resolver nada.
   async create(user: AuthUser, input: CreateCampaignInput) {
-    const channel = await resolveWhatsappChannel(input.whatsappChannelId, user.activeOrganizationId!);
-
     const contacts = input.contacts.map((c) => ({ ...c, email: c.email || undefined }));
-    const semTelefone = contacts.some((c) => !c.phone);
-    if (semTelefone) throw new ValidationError("Todo contato precisa ter telefone preenchido.");
 
-    await assertRouteToHumanIsValid(channel.serviceIsland!.id, input.routeToQueueId, input.routeToUserId);
-
-    const campaign = await prisma.campaign.create({
-      data: {
-        organizationId: user.activeOrganizationId!,
-        whatsappChannelId: channel.id,
-        name: input.name,
-        category: input.category,
-        templateName: input.templateName,
-        language: input.language,
-        dispatchType: input.dispatchType,
-        expectedContacts: contacts.length,
-        createdByUserId: user.id,
-        createdByName: user.name,
-        createdByEmail: user.email,
-        routeToQueueId: input.routeToQueueId,
-        routeToUserId: input.routeToUserId,
-      },
-    });
-
-    await sendCampaignToWorker({
-      campaignId: campaign.id,
+    return this.dispatch({
       organizationId: user.activeOrganizationId!,
-      whatsappChannelId: channel.id,
-      phoneNumberId: channel.phoneNumberId,
-      wabaId: channel.wabaId,
-      serviceIslandId: channel.serviceIsland!.id,
-      agentId: channel.agent.id,
-      agentName: channel.agent.name,
+      whatsappChannelId: input.whatsappChannelId,
+      campaignName: input.name,
       templateName: input.templateName,
-      language: input.language,
       category: input.category,
+      language: input.language,
+      dispatchType: input.dispatchType,
       templateHeaderText: input.templateHeaderText,
       templateBodyText: input.templateBodyText,
-      contacts,
       routeToQueueId: input.routeToQueueId,
       routeToUserId: input.routeToUserId,
+      createdByUserId: user.id,
+      createdByName: user.name,
+      createdByEmail: user.email,
+      contacts,
     });
-
-    return this.toListItem(campaign, channel);
   },
 
   async list(user: AuthUser, query: ListCampaignsQuery) {

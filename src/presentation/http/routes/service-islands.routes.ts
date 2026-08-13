@@ -14,7 +14,26 @@ export const serviceIslandsRouter = Router();
 const queuesRouter = Router({ mergeParams: true });
 const tagsRouter = Router({ mergeParams: true });
 
-const renameSchema = z.object({ name: z.string().trim().min(1), requireCloseTag: z.boolean().optional() });
+const renameSchema = z.object({
+  name: z.string().trim().min(1),
+  requireCloseTag: z.boolean().optional(),
+  allowActiveDispatch: z.boolean().optional(),
+});
+
+const paginationQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(10),
+});
+
+const TICKET_STATUS_VALUES = ["WAITING", "IN_PROGRESS", "CLOSED"] as const;
+const listTicketsQuerySchema = paginationQuerySchema.extend({
+  /// Lista separada por vírgula, ex: "CLOSED" ou "WAITING,IN_PROGRESS".
+  status: z
+    .string()
+    .optional()
+    .transform((v) => v?.split(",").map((s) => s.trim()))
+    .pipe(z.array(z.enum(TICKET_STATUS_VALUES)).optional()),
+});
 
 serviceIslandsRouter.get(
   "/",
@@ -31,9 +50,19 @@ serviceIslandsRouter.get(
 );
 
 serviceIslandsRouter.get(
+  "/:id/monitoring",
+  apiHandler({ action: PermissionAction.CONTACTS_VIEW }, async (req, _res, user) => {
+    return serviceIslandService.getMonitoring(user, String(req.params.id));
+  }),
+);
+
+serviceIslandsRouter.get(
   "/:id/tickets",
   apiHandler({ action: PermissionAction.CONTACTS_VIEW }, async (req, _res, user) => {
-    return serviceIslandService.listTickets(user, String(req.params.id));
+    const parsed = listTicketsQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Parâmetros inválidos.", parsed.error.flatten());
+
+    return serviceIslandService.listTickets(user, String(req.params.id), parsed.data);
   }),
 );
 
@@ -45,7 +74,13 @@ serviceIslandsRouter.put(
 
     const id = String(req.params.id);
     const before = await serviceIslandService.getById(user, id);
-    const island = await serviceIslandService.rename(user, id, parsed.data.name, parsed.data.requireCloseTag);
+    const island = await serviceIslandService.rename(
+      user,
+      id,
+      parsed.data.name,
+      parsed.data.requireCloseTag,
+      parsed.data.allowActiveDispatch,
+    );
 
     await recordAudit(req, user, {
       action: "SERVICE_ISLAND_RENAMED",
@@ -62,7 +97,10 @@ serviceIslandsRouter.put(
 queuesRouter.get(
   "/",
   apiHandler({ action: PermissionAction.QUEUES_VIEW }, async (req, _res, user) => {
-    return queueService.list(user, String(req.params.id));
+    const parsed = paginationQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Parâmetros inválidos.", parsed.error.flatten());
+
+    return queueService.list(user, String(req.params.id), parsed.data);
   }),
 );
 
@@ -117,7 +155,10 @@ queuesRouter.put(
 tagsRouter.get(
   "/",
   apiHandler({ action: PermissionAction.QUEUES_VIEW }, async (req, _res, user) => {
-    return serviceIslandTagService.list(user, String(req.params.id));
+    const parsed = paginationQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Parâmetros inválidos.", parsed.error.flatten());
+
+    return serviceIslandTagService.list(user, String(req.params.id), parsed.data);
   }),
 );
 

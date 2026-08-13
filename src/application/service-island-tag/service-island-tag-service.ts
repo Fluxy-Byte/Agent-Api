@@ -13,12 +13,23 @@ async function assertServiceIslandBelongsToOrganization(serviceIslandId: string,
 }
 
 export const serviceIslandTagService = {
-  async list(user: AuthUser, serviceIslandId: string) {
+  async list(user: AuthUser, serviceIslandId: string, options: { page?: number; pageSize?: number } = {}) {
     await assertServiceIslandBelongsToOrganization(serviceIslandId, user.activeOrganizationId!);
-    return prisma.ticketCloseTag.findMany({
-      where: { serviceIslandId },
-      orderBy: { createdAt: "asc" },
-    });
+    const page = options.page ?? 1;
+    const pageSize = options.pageSize ?? 10;
+    const where = { serviceIslandId };
+
+    const [items, total] = await Promise.all([
+      prisma.ticketCloseTag.findMany({
+        where,
+        orderBy: { createdAt: "asc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.ticketCloseTag.count({ where }),
+    ]);
+
+    return { items, total, page, pageSize };
   },
 
   async getById(user: AuthUser, serviceIslandId: string, tagId: string) {

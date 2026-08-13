@@ -18,10 +18,10 @@ interface MetaErrorResponse {
 /// Consulta a Graph API pra listar todos os números de telefone cadastrados
 /// em um WhatsApp Business Account — usado no cadastro em massa de canais a
 /// partir de um WABA ID já existente na Meta.
-export async function listWabaPhoneNumbers(wabaId: string): Promise<MetaPhoneNumber[]> {
+export async function listWabaPhoneNumbers(wabaId: string, accessToken: string): Promise<MetaPhoneNumber[]> {
   const url = `https://graph.facebook.com/${env.META_GRAPH_API_VERSION}/${wabaId}/phone_numbers`;
 
-  const response = await fetch(`${url}?access_token=${encodeURIComponent(env.META_ACCESS_TOKEN)}`);
+  const response = await fetch(`${url}?access_token=${encodeURIComponent(accessToken)}`);
   const body = (await response.json()) as MetaPhoneNumbersResponse & MetaErrorResponse;
 
   if (!response.ok) {
@@ -71,10 +71,10 @@ export function getTemplateVariableCount(components: MetaTemplateComponent[]): {
 
 /// Lista os templates de mensagem cadastrados no WABA (aprovados ou não) —
 /// usado na etapa de escolha de template do disparo de campanha.
-export async function listWabaTemplates(wabaId: string): Promise<MetaTemplate[]> {
+export async function listWabaTemplates(wabaId: string, accessToken: string): Promise<MetaTemplate[]> {
   const url = `https://graph.facebook.com/${env.META_GRAPH_API_VERSION}/${wabaId}/message_templates`;
 
-  const response = await fetch(`${url}?access_token=${encodeURIComponent(env.META_ACCESS_TOKEN)}`);
+  const response = await fetch(`${url}?access_token=${encodeURIComponent(accessToken)}`);
   const body = (await response.json()) as MetaTemplatesResponse & MetaErrorResponse;
 
   if (!response.ok) {

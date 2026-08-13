@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 import { isMemberRole } from "../../domain/enums/member-role";
 import { ForbiddenError, NotFoundError, ValidationError } from "../../domain/errors/app-error";
 import { slugify } from "../../domain/utils/slug";
@@ -90,5 +90,20 @@ export const companyService = {
       data: { role },
       include: { user: { select: { id: true, name: true, email: true, image: true } } },
     });
+  },
+
+  /// Gera (ou rotaciona) o token de acesso à API externa (Fluxy Agents) desta
+  /// empresa — o valor bruto só existe nesta resposta, nunca mais é devolvido
+  /// em claro (ver sanitizeCompany em companies.routes.ts).
+  async generateApiToken(user: AuthUser, organizationId: string) {
+    await this.getById(user, organizationId);
+
+    const token = randomBytes(32).toString("hex");
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { tokenAcessApi: token },
+    });
+
+    return { token };
   },
 };

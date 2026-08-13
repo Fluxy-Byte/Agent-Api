@@ -51,6 +51,7 @@ export const whatsappChannelService = {
           phoneNumberId: input.phoneNumberId,
           displayNumber: input.displayNumber,
           wabaId: input.wabaId,
+          metaAccessToken: input.metaAccessToken,
         },
       });
 
@@ -88,6 +89,9 @@ export const whatsappChannelService = {
         phoneNumberId: input.phoneNumberId ?? existing.phoneNumberId,
         displayNumber: input.displayNumber ?? existing.displayNumber,
         wabaId: input.wabaId ?? existing.wabaId,
+        // Campo em branco = não mexe no token salvo (não existe forma de
+        // "limpar" o token por essa rota — só sobrescrever com um novo).
+        metaAccessToken: input.metaAccessToken ?? existing.metaAccessToken,
       },
       include: { serviceIsland: true },
     });
@@ -96,8 +100,8 @@ export const whatsappChannelService = {
   /// Consulta a Graph API com o WABA ID informado e devolve todos os números
   /// cadastrados nele, marcando os que já viraram WhatsApp Channel em
   /// qualquer empresa (phoneNumberId é único na plataforma inteira).
-  async lookupWaba(wabaId: string) {
-    const numbers = await listWabaPhoneNumbers(wabaId);
+  async lookupWaba(wabaId: string, accessToken: string) {
+    const numbers = await listWabaPhoneNumbers(wabaId, accessToken);
 
     const existing = await prisma.whatsappChannel.findMany({
       where: { phoneNumberId: { in: numbers.map((n) => n.id) } },
@@ -137,6 +141,7 @@ export const whatsappChannelService = {
             phoneNumberId: number.phoneNumberId,
             displayNumber: number.displayNumber,
             wabaId: input.wabaId,
+            metaAccessToken: input.metaAccessToken,
           },
         });
 
@@ -161,8 +166,11 @@ export const whatsappChannelService = {
   /// template do disparo de campanha.
   async listTemplates(user: AuthUser, id: string) {
     const channel = await this.getById(user, id);
+    if (!channel.metaAccessToken) {
+      throw new ValidationError("Este canal ainda não tem um token de acesso da Meta cadastrado.");
+    }
 
-    const templates = await listWabaTemplates(channel.wabaId);
+    const templates = await listWabaTemplates(channel.wabaId, channel.metaAccessToken);
 
     return templates.map((t) => ({
       id: t.id,

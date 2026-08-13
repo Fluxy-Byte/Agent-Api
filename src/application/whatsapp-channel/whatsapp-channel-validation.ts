@@ -5,17 +5,20 @@ export const createWhatsappChannelSchema = z.object({
   phoneNumberId: z.string().trim().min(1, "Phone Number ID é obrigatório."),
   displayNumber: z.string().trim().min(1, "Número de exibição é obrigatório."),
   wabaId: z.string().trim().min(1, "WhatsApp Business Account ID é obrigatório."),
+  metaAccessToken: z.string().trim().min(1, "Token de acesso da Meta é obrigatório."),
 });
 
 export const updateWhatsappChannelSchema = createWhatsappChannelSchema.partial();
 
 export const wabaLookupSchema = z.object({
   wabaId: z.string().trim().min(1, "WhatsApp Business Account ID é obrigatório."),
+  metaAccessToken: z.string().trim().min(1, "Token de acesso da Meta é obrigatório."),
 });
 
 export const bulkCreateWhatsappChannelSchema = z.object({
   agentId: z.string().trim().min(1, "Agente é obrigatório."),
   wabaId: z.string().trim().min(1, "WhatsApp Business Account ID é obrigatório."),
+  metaAccessToken: z.string().trim().min(1, "Token de acesso da Meta é obrigatório."),
   phoneNumbers: z
     .array(
       z.object({

@@ -40,9 +40,9 @@ const envSchema = z.object({
 
   APP_TIMEZONE: z.string().default("America/Sao_Paulo"),
 
-  /// Usado para consultar a Graph API da Meta (ex.: listar os números de
-  /// telefone cadastrados em um WABA) — mesmo token do Inbound-Service.
-  META_ACCESS_TOKEN: z.string().min(1),
+  /// Versão da Graph API da Meta usada para consultas (lookup de números,
+  /// templates) — o token de acesso agora é por WABA, salvo em
+  /// WhatsappChannel.metaAccessToken.
   META_GRAPH_API_VERSION: z.string().default("v21.0"),
 
   /// Base URL do Campaign-Worker (POST /campaign/send) — autenticado com o

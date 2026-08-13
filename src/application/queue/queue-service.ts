@@ -39,13 +39,24 @@ async function syncQueueMembers(tx: typeof prisma, queueId: string, userIds: str
 }
 
 export const queueService = {
-  async list(user: AuthUser, serviceIslandId: string) {
+  async list(user: AuthUser, serviceIslandId: string, options: { page?: number; pageSize?: number } = {}) {
     await assertServiceIslandBelongsToOrganization(serviceIslandId, user.activeOrganizationId!);
-    return prisma.queue.findMany({
-      where: { serviceIslandId },
-      include: { members: { include: { user: true } } },
-      orderBy: { createdAt: "desc" },
-    });
+    const page = options.page ?? 1;
+    const pageSize = options.pageSize ?? 10;
+    const where = { serviceIslandId };
+
+    const [items, total] = await Promise.all([
+      prisma.queue.findMany({
+        where,
+        include: { members: { include: { user: true } } },
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.queue.count({ where }),
+    ]);
+
+    return { items, total, page, pageSize };
   },
 
   async getById(user: AuthUser, serviceIslandId: string, queueId: string) {

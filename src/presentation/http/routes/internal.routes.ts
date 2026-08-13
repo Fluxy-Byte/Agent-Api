@@ -17,6 +17,30 @@ const metropoleWelcomeSchema = z.object({
   name: z.string().trim().min(1),
 });
 
+const dispatchContactSchema = z.object({
+  numberContact: z.string().trim().min(8, "Telefone obrigatório."),
+  nameContact: z.string().trim().optional(),
+  emailContact: z.string().trim().email().optional().or(z.literal("")),
+  metadata: z.record(z.string(), z.string()).optional(),
+});
+
+/// Contrato interno único de disparo — usado hoje pela futura API externa
+/// (Fluxy Agents) e, mais adiante, pelo disparo ativo do Desk. organizationId
+/// vem explícito no body porque não há sessão de usuário aqui (o caller já é
+/// confiável, autenticado por x-internal-api-key).
+const campaignDispatchSchema = z.object({
+  organizationId: z.string().trim().min(1),
+  whatsappChannelId: z.string().trim().min(1),
+  campaignName: z.string().trim().min(1),
+  templateName: z.string().trim().min(1),
+  language: z.string().trim().optional(),
+  idAttendant: z.string().trim().min(1).optional(),
+  idQueue: z.string().trim().min(1).optional(),
+  createdByName: z.string().trim().optional(),
+  skipTransferMessage: z.boolean().optional(),
+  contacts: z.array(dispatchContactSchema).min(1, "Envie ao menos 1 contato."),
+});
+
 const ragDocumentStatusSchema = z.object({
   status: z.enum(["READY", "FAILED"]),
   chunkCount: z.number().int().optional(),
@@ -93,6 +117,43 @@ internalRouter.post("/campaigns/metropole-welcome", async (req, res) => {
   } catch (error) {
     const statusCode = error instanceof AppError ? error.statusCode : 502;
     const message = error instanceof Error ? error.message : "Falha ao disparar a campanha de boas-vindas.";
+    res.status(statusCode).json({ success: false, result: null, message });
+  }
+});
+
+/// Ponto único de disparo ativo, chamável por qualquer serviço confiável
+/// (x-internal-api-key) — hoje usado pela API externa Fluxy Agents, e serve
+/// de base para o futuro disparo ativo pelo Desk. organizationId vem
+/// explícito no body (sem sessão de usuário).
+internalRouter.post("/campaigns/dispatch", async (req, res) => {
+  const parsed = campaignDispatchSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(422).json({ success: false, result: null, message: "Dados inválidos.", errors: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const campaign = await campaignService.dispatch({
+      organizationId: parsed.data.organizationId,
+      whatsappChannelId: parsed.data.whatsappChannelId,
+      campaignName: parsed.data.campaignName,
+      templateName: parsed.data.templateName,
+      language: parsed.data.language,
+      routeToQueueId: parsed.data.idQueue,
+      routeToUserId: parsed.data.idAttendant,
+      createdByName: parsed.data.createdByName,
+      skipTransferMessage: parsed.data.skipTransferMessage,
+      contacts: parsed.data.contacts.map((c) => ({
+        phone: c.numberContact,
+        name: c.nameContact,
+        email: c.emailContact || undefined,
+        metadata: c.metadata,
+      })),
+    });
+    res.status(202).json({ success: true, result: campaign, message: null });
+  } catch (error) {
+    const statusCode = error instanceof AppError ? error.statusCode : 502;
+    const message = error instanceof Error ? error.message : "Falha ao disparar a campanha.";
     res.status(statusCode).json({ success: false, result: null, message });
   }
 });
