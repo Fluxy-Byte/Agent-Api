@@ -17,11 +17,16 @@ const metropoleWelcomeSchema = z.object({
   name: z.string().trim().min(1),
 });
 
+const templateParameterSchema = z.object({ type: z.string(), text: z.string() });
+
 const dispatchContactSchema = z.object({
   numberContact: z.string().trim().min(8, "Telefone obrigatório."),
   nameContact: z.string().trim().optional(),
   emailContact: z.string().trim().email().optional().or(z.literal("")),
   metadata: z.record(z.string(), z.string()).optional(),
+  parametersHeader: z.array(templateParameterSchema).optional(),
+  parametersBody: z.array(templateParameterSchema).optional(),
+  parametersButton: z.array(templateParameterSchema).optional(),
 });
 
 /// Contrato interno único de disparo — usado hoje pela futura API externa
@@ -38,6 +43,10 @@ const campaignDispatchSchema = z.object({
   idQueue: z.string().trim().min(1).optional(),
   createdByName: z.string().trim().optional(),
   skipTransferMessage: z.boolean().optional(),
+  /// Texto cru do HEADER/BODY do template (com {{n}}) — só pra gravar no
+  /// histórico de conversa a mensagem já com as variáveis substituídas.
+  templateHeaderText: z.string().optional(),
+  templateBodyText: z.string().optional(),
   contacts: z.array(dispatchContactSchema).min(1, "Envie ao menos 1 contato."),
 });
 
@@ -143,11 +152,16 @@ internalRouter.post("/campaigns/dispatch", async (req, res) => {
       routeToUserId: parsed.data.idAttendant,
       createdByName: parsed.data.createdByName,
       skipTransferMessage: parsed.data.skipTransferMessage,
+      templateHeaderText: parsed.data.templateHeaderText,
+      templateBodyText: parsed.data.templateBodyText,
       contacts: parsed.data.contacts.map((c) => ({
         phone: c.numberContact,
         name: c.nameContact,
         email: c.emailContact || undefined,
         metadata: c.metadata,
+        parametersHeader: c.parametersHeader,
+        parametersBody: c.parametersBody,
+        parametersButton: c.parametersButton,
       })),
     });
     res.status(202).json({ success: true, result: campaign, message: null });
