@@ -26,14 +26,23 @@ const paginationQuerySchema = z.object({
 });
 
 const TICKET_STATUS_VALUES = ["WAITING", "IN_PROGRESS", "CLOSED"] as const;
-const listTicketsQuerySchema = paginationQuerySchema.extend({
+const ticketFilterSchema = z.object({
   /// Lista separada por vírgula, ex: "CLOSED" ou "WAITING,IN_PROGRESS".
   status: z
     .string()
     .optional()
     .transform((v) => v?.split(",").map((s) => s.trim()))
     .pipe(z.array(z.enum(TICKET_STATUS_VALUES)).optional()),
+  search: z.string().trim().optional(),
+  queueId: z.string().trim().optional(),
+  assignedUserId: z.string().trim().optional(),
+  closeTagId: z.string().trim().optional(),
+  outcome: z.enum(["CONCLUDED", "CANCELED"]).optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
 });
+
+const listTicketsQuerySchema = paginationQuerySchema.merge(ticketFilterSchema);
 
 serviceIslandsRouter.get(
   "/",
@@ -63,6 +72,16 @@ serviceIslandsRouter.get(
     if (!parsed.success) throw new ValidationError("Parâmetros inválidos.", parsed.error.flatten());
 
     return serviceIslandService.listTickets(user, String(req.params.id), parsed.data);
+  }),
+);
+
+serviceIslandsRouter.get(
+  "/:id/tickets/stats",
+  apiHandler({ action: PermissionAction.CONTACTS_VIEW }, async (req, _res, user) => {
+    const parsed = ticketFilterSchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Parâmetros inválidos.", parsed.error.flatten());
+
+    return serviceIslandService.getTicketStats(user, String(req.params.id), parsed.data);
   }),
 );
 
