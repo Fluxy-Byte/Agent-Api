@@ -1,7 +1,21 @@
+import type { Prisma } from "../../../generated/prisma/client";
 import { NotFoundError, ValidationError } from "../../domain/errors/app-error";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
 import type { CreateQueueInput, UpdateQueueInput } from "./queue-validation";
+
+interface QueueFilter {
+  search?: string;
+  isActive?: boolean;
+}
+
+function buildQueueWhere(serviceIslandId: string, filter: QueueFilter): Prisma.QueueWhereInput {
+  return {
+    serviceIslandId,
+    ...(filter.isActive === undefined ? {} : { isActive: filter.isActive }),
+    ...(filter.search ? { name: { contains: filter.search, mode: "insensitive" as const } } : {}),
+  };
+}
 
 async function assertServiceIslandBelongsToOrganization(serviceIslandId: string, organizationId: string) {
   const island = await prisma.serviceIsland.findFirst({
@@ -39,11 +53,15 @@ async function syncQueueMembers(tx: typeof prisma, queueId: string, userIds: str
 }
 
 export const queueService = {
-  async list(user: AuthUser, serviceIslandId: string, options: { page?: number; pageSize?: number } = {}) {
+  async list(
+    user: AuthUser,
+    serviceIslandId: string,
+    options: QueueFilter & { page?: number; pageSize?: number } = {},
+  ) {
     await assertServiceIslandBelongsToOrganization(serviceIslandId, user.activeOrganizationId!);
     const page = options.page ?? 1;
     const pageSize = options.pageSize ?? 10;
-    const where = { serviceIslandId };
+    const where = buildQueueWhere(serviceIslandId, options);
 
     const [items, total] = await Promise.all([
       prisma.queue.findMany({
@@ -57,6 +75,19 @@ export const queueService = {
     ]);
 
     return { items, total, page, pageSize };
+  },
+
+  /// Contagens gerais da ilha (não são afetadas pelos filtros da lista) —
+  /// total de filas, ativas e inativas.
+  async getStats(user: AuthUser, serviceIslandId: string) {
+    await assertServiceIslandBelongsToOrganization(serviceIslandId, user.activeOrganizationId!);
+
+    const [total, active] = await Promise.all([
+      prisma.queue.count({ where: { serviceIslandId } }),
+      prisma.queue.count({ where: { serviceIslandId, isActive: true } }),
+    ]);
+
+    return { total, active, inactive: total - active };
   },
 
   async getById(user: AuthUser, serviceIslandId: string, queueId: string) {

@@ -44,6 +44,16 @@ const ticketFilterSchema = z.object({
 
 const listTicketsQuerySchema = paginationQuerySchema.merge(ticketFilterSchema);
 
+const queueFilterSchema = z.object({
+  search: z.string().trim().optional(),
+  isActive: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "true")),
+});
+
+const listQueuesQuerySchema = paginationQuerySchema.merge(queueFilterSchema);
+
 serviceIslandsRouter.get(
   "/",
   apiHandler({ action: PermissionAction.SERVICE_ISLANDS_VIEW }, async (_req, _res, user) => {
@@ -116,10 +126,17 @@ serviceIslandsRouter.put(
 queuesRouter.get(
   "/",
   apiHandler({ action: PermissionAction.QUEUES_VIEW }, async (req, _res, user) => {
-    const parsed = paginationQuerySchema.safeParse(req.query);
+    const parsed = listQueuesQuerySchema.safeParse(req.query);
     if (!parsed.success) throw new ValidationError("Parâmetros inválidos.", parsed.error.flatten());
 
     return queueService.list(user, String(req.params.id), parsed.data);
+  }),
+);
+
+queuesRouter.get(
+  "/stats",
+  apiHandler({ action: PermissionAction.QUEUES_VIEW }, async (req, _res, user) => {
+    return queueService.getStats(user, String(req.params.id));
   }),
 );
 
