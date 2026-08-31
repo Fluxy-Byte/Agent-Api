@@ -10,7 +10,7 @@ function buildCampaignWhere(user: AuthUser, filter: ListCampaignsFilter): Prisma
   return {
     organizationId: user.activeOrganizationId!,
     ...(filter.whatsappChannelId ? { whatsappChannelId: filter.whatsappChannelId } : {}),
-    ...(filter.agentId ? { whatsappChannel: { agentId: filter.agentId } } : {}),
+    ...(filter.agentId ? { agentId: filter.agentId } : {}),
     ...(filter.search ? { name: { contains: filter.search, mode: "insensitive" } } : {}),
     ...(filter.status ? { status: filter.status } : {}),
     ...(filter.templateName ? { templateName: filter.templateName } : {}),
@@ -145,6 +145,10 @@ export const campaignService = {
       data: {
         organizationId: params.organizationId,
         whatsappChannelId: channel.id,
+        // Snapshot do agente que atende o canal NESTE momento — trocar o
+        // agente do canal depois não deve alterar quem aparece no histórico
+        // desta campanha (ver comentário do campo no schema.prisma).
+        agentId: channel.agent.id,
         name: params.campaignName,
         category,
         templateName: params.templateName,
@@ -179,7 +183,7 @@ export const campaignService = {
       skipTransferMessage: params.skipTransferMessage,
     });
 
-    return this.toListItem(campaign, channel);
+    return this.toListItem(campaign, channel.displayNumber, channel.agent.name);
   },
 
   /// Disparo de campanha sem sessão de usuário (chamado via /internal/*, ex:
@@ -248,7 +252,7 @@ export const campaignService = {
     const [rows, total] = await Promise.all([
       prisma.campaign.findMany({
         where,
-        include: { whatsappChannel: { include: { agent: true } } },
+        include: { whatsappChannel: true, agent: true },
         orderBy: { sentAt: query.sortDir },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -257,7 +261,7 @@ export const campaignService = {
     ]);
 
     return {
-      items: rows.map((c) => this.toListItem(c, c.whatsappChannel)),
+      items: rows.map((c) => this.toListItem(c, c.whatsappChannel.displayNumber, c.agent.name)),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -310,7 +314,7 @@ export const campaignService = {
   async getById(user: AuthUser, id: string) {
     const campaign = await prisma.campaign.findFirst({
       where: { id, organizationId: user.activeOrganizationId! },
-      include: { whatsappChannel: { include: { agent: true } } },
+      include: { whatsappChannel: true, agent: true },
     });
     if (!campaign) throw new NotFoundError("Campanha não encontrada.");
 
@@ -321,7 +325,7 @@ export const campaignService = {
     });
 
     return {
-      ...this.toListItem(campaign, campaign.whatsappChannel),
+      ...this.toListItem(campaign, campaign.whatsappChannel.displayNumber, campaign.agent.name),
       targets: targets.map((t) => ({
         id: t.id,
         targetId: t.targetId,
@@ -335,6 +339,9 @@ export const campaignService = {
     };
   },
 
+  /// agentId/agentName vêm da própria Campaign (snapshot do momento do
+  /// disparo, ver comentário do campo no schema.prisma) — NUNCA do
+  /// whatsappChannel.agent atual, que pode já apontar pra outro agente.
   toListItem(
     c: {
       id: string;
@@ -348,11 +355,13 @@ export const campaignService = {
       totalSent: number;
       totalFailures: number;
       whatsappChannelId: string;
+      agentId: string;
       createdByName: string | null;
       createdByEmail: string | null;
       sentAt: Date;
     },
-    channel: { displayNumber: string; agentId: string; agent: { name: string } },
+    whatsappChannelDisplayNumber: string,
+    agentName: string,
   ) {
     return {
       id: c.id,
@@ -366,9 +375,9 @@ export const campaignService = {
       totalSent: c.totalSent,
       totalFailures: c.totalFailures,
       whatsappChannelId: c.whatsappChannelId,
-      whatsappChannelDisplayNumber: channel.displayNumber,
-      agentId: channel.agentId,
-      agentName: channel.agent.name,
+      whatsappChannelDisplayNumber,
+      agentId: c.agentId,
+      agentName,
       createdByName: c.createdByName,
       createdByEmail: c.createdByEmail,
       sentAt: c.sentAt,

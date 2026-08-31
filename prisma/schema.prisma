@@ -259,6 +259,7 @@ model Agent {
 
   whatsappChannels WhatsappChannel[]
   ragDocuments     RagDocument[]
+  campaigns        Campaign[]
 
   @@index([organizationId])
   @@index([defaultQueueId])
@@ -508,6 +509,14 @@ model Campaign {
   organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   whatsappChannelId String
   whatsappChannel   WhatsappChannel @relation(fields: [whatsappChannelId], references: [id], onDelete: Cascade)
+  /// Snapshot do agente que atendeu no momento do disparo — resolvido do
+  /// whatsappChannel.agentId ATUAL na hora de criar a Campaign (ver
+  /// campaign-service.ts#dispatch) e nunca mais tocado depois. Existe pra que
+  /// trocar o agente vinculado ao canal não reescreva retroativamente qual
+  /// agente aparece no histórico de campanhas já disparadas — sempre ler o
+  /// agente pela Campaign, nunca pelo whatsappChannel.agent atual.
+  agentId           String
+  agent             Agent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   name         String
   category     String?
@@ -548,6 +557,7 @@ model Campaign {
 
   @@index([organizationId])
   @@index([whatsappChannelId])
+  @@index([agentId])
   @@index([routeToQueueId])
   @@index([routeToUserId])
 }
