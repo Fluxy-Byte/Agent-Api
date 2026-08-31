@@ -119,9 +119,11 @@ export const companyService = {
   },
 
   /// Gera um código de convite (invitationMember) para a empresa, com o papel
-  /// que será concedido a quem resgatar — quem resgata não escolhe o papel,
-  /// quem convida sim, na hora da geração.
-  async generateInviteCode(user: AuthUser, organizationId: string, role: string) {
+  /// que será concedido a quem resgatar e o e-mail da pessoa convidada — quem
+  /// resgata não escolhe papel nem e-mail, quem convida sim, na hora da
+  /// geração. O resgate só é aceito se bater com esse e-mail (ver
+  /// redeemInviteCode).
+  async generateInviteCode(user: AuthUser, organizationId: string, role: string, email: string) {
     await this.getById(user, organizationId);
 
     if (!isMemberRole(role)) {
@@ -129,7 +131,7 @@ export const companyService = {
     }
 
     return prisma.invitationMember.create({
-      data: { organizationId, code: generateInviteCode(), role, finish: true },
+      data: { organizationId, code: generateInviteCode(), role, email: email.trim().toLowerCase(), finish: true },
     });
   },
 
@@ -143,14 +145,21 @@ export const companyService = {
     });
   },
 
-  /// Resgate do código na tela de cadastro (signup): o code precisa existir e
-  /// ainda estar ativo (finish=true). O updateMany com finish=true na cláusula
-  /// where funciona como compare-and-swap — se duas requisições concorrentes
-  /// tentarem resgatar o mesmo code, só uma consegue afetar 1 linha; a outra
-  /// recebe count 0 e sabe que perdeu a corrida, sem precisar de lock explícito.
+  /// Resgate do código na tela de cadastro (signup): o code precisa existir,
+  /// ainda estar ativo (finish=true) E o e-mail da conta logada precisa bater
+  /// com o e-mail informado na geração — o code sozinho não basta, alguém que
+  /// o intercepte não consegue usá-lo com outra conta. O updateMany com
+  /// finish=true na cláusula where funciona como compare-and-swap — se duas
+  /// requisições concorrentes tentarem resgatar o mesmo code, só uma consegue
+  /// afetar 1 linha; a outra recebe count 0 e sabe que perdeu a corrida, sem
+  /// precisar de lock explícito.
   async redeemInviteCode(user: AuthUser, code: string) {
     const invitation = await prisma.invitationMember.findUnique({ where: { code } });
     if (!invitation) throw new NotFoundError("Código de convite inválido.");
+
+    if (invitation.email !== user.email.trim().toLowerCase()) {
+      throw new ForbiddenError("Este código de convite foi gerado para outro e-mail.");
+    }
 
     const existingMember = await prisma.member.findUnique({
       where: { organizationId_userId: { organizationId: invitation.organizationId, userId: user.id } },

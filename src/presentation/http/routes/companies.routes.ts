@@ -11,7 +11,7 @@ const createCompanySchema = z.object({
 });
 
 const updateMemberRoleSchema = z.object({ role: z.string().min(1) });
-const generateInviteCodeSchema = z.object({ role: z.string().min(1) });
+const generateInviteCodeSchema = z.object({ role: z.string().min(1), email: z.string().email() });
 const redeemInviteCodeSchema = z.object({ code: z.string().min(1) });
 
 export const companiesRouter = Router();
@@ -178,13 +178,18 @@ companiesRouter.post(
       }
     }
 
-    const invitation = await companyService.generateInviteCode(user, organizationId, parsed.data.role);
+    const invitation = await companyService.generateInviteCode(
+      user,
+      organizationId,
+      parsed.data.role,
+      parsed.data.email,
+    );
 
     await recordAudit(req, user, {
       action: "INVITE_CODE_GENERATED",
       resourceType: "InvitationMember",
       resourceId: invitation.id,
-      afterState: { code: invitation.code, role: invitation.role },
+      afterState: { code: invitation.code, role: invitation.role, email: invitation.email },
     });
 
     return invitation;

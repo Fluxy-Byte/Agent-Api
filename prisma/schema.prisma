@@ -178,8 +178,10 @@ model Invitation {
 
 /// Convite por código (distinto do model Invitation acima, que é o convite por
 /// e-mail do plugin organization do Better Auth). O Gerente gera um code único
-/// na tela de Acessos escolhendo o papel (role) que será concedido, e o
-/// repassa por fora (ex: WhatsApp) para a pessoa digitar na tela de cadastro.
+/// na tela de Acessos escolhendo o papel (role) e o e-mail da pessoa
+/// convidada, e repassa o code por fora (ex: WhatsApp) para ela digitar na
+/// tela de cadastro. O resgate só é aceito se o e-mail da conta que está
+/// resgatando bater com `email` — o code sozinho não basta.
 /// finish=true ⇒ code ainda não utilizado; finish=false ⇒ já resgatado — nesse
 /// caso userId aponta pra quem resgatou. Nunca é reaberto: um code gasto vira
 /// histórico, um novo convite exige gerar outro code.
@@ -188,6 +190,7 @@ model InvitationMember {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   code           String       @unique
+  email          String
   role           String
   finish         Boolean      @default(true)
   userId         String?
@@ -196,6 +199,7 @@ model InvitationMember {
   updatedAt      DateTime     @updatedAt
 
   @@index([organizationId])
+  @@index([email])
   @@map("invitation_member")
 }
 
