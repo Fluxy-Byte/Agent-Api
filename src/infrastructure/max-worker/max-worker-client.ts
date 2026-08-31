@@ -9,6 +9,10 @@ export interface RagIngestPayload {
   fileName: string;
   categories: string[];
   chunkSize: number;
+  /// Decifrado — o worker usa pra gerar os embeddings deste agente em vez do
+  /// OPENAI_API_KEY do próprio env. null = agente sem token configurado
+  /// ainda, worker cai pro fallback do env.
+  openaiToken: string | null;
 }
 
 /// Dispara a ingestão (extrair texto, quebrar em chunks, gerar embeddings) no

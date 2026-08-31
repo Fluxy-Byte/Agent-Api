@@ -1,5 +1,6 @@
 import { agentService } from "../agent/agent-service";
 import { NotFoundError } from "../../domain/errors/app-error";
+import { tryDecryptToken } from "../../infrastructure/crypto/token-cipher";
 import { createRagDocumentUploadUrl } from "../../infrastructure/storage/s3-client";
 import { sendRagDocumentToWorker } from "../../infrastructure/max-worker/max-worker-client";
 import { prisma } from "../../infrastructure/database/prisma/client";
@@ -51,6 +52,11 @@ export const ragDocumentService = {
       fileName: input.fileName,
       categories: input.categories,
       chunkSize: input.chunkSize,
+      // Decifrado aqui mesmo — o worker embeda os chunks com o token deste
+      // agente em vez do OPENAI_API_KEY fixo do seu próprio env (mesmo
+      // padrão do agentPayload no Inbound-Service). null quando o agente
+      // ainda não tem token configurado — o worker cai pro fallback do env.
+      openaiToken: tryDecryptToken(agent.openaiTokenEncrypted, `openaiToken do agente ${agent.id}`),
     });
 
     return document;

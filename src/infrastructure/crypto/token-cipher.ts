@@ -47,3 +47,18 @@ export function previewToken(stored: string | null): string | null {
   if (!stored) return null;
   return decryptToken(stored).slice(0, 6);
 }
+
+/// Decifra com fallback null em vez de lançar — usado nos pontos que repassam
+/// o token pra outro serviço (ex: envio do payload de ingestão RAG pro
+/// AI-Worker): um valor corrompido ou uma chave desatualizada não pode
+/// derrubar a operação inteira, só deixa aquele token específico ausente (o
+/// consumidor cai pro fallback do próprio env do processo).
+export function tryDecryptToken(stored: string | null, label: string): string | null {
+  if (!stored) return null;
+  try {
+    return decryptToken(stored);
+  } catch (error) {
+    console.error(`Falha ao decifrar ${label}:`, error);
+    return null;
+  }
+}
