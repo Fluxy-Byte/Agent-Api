@@ -79,6 +79,13 @@ whatsappChannelsRouter.get(
   }),
 );
 
+whatsappChannelsRouter.get(
+  "/:id/messages-by-month",
+  apiHandler({ action: PermissionAction.WABAS_VIEW }, async (req, _res, user) => {
+    return whatsappChannelService.getMonthlyMessageVolume(user, String(req.params.id));
+  }),
+);
+
 whatsappChannelsRouter.post(
   "/waba-lookup",
   apiHandler({ action: PermissionAction.WABAS_WRITE }, async (req) => {

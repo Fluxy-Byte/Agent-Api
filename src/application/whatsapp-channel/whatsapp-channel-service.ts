@@ -1,4 +1,6 @@
+import { MESSAGES_COLLECTION, type MessageDocument } from "../../domain/contracts/message-document";
 import { ConflictError, NotFoundError, ValidationError } from "../../domain/errors/app-error";
+import { getMongoDb } from "../../infrastructure/database/mongo/client";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import {
   getPhoneNumberStatus,
@@ -221,5 +223,46 @@ export const whatsappChannelService = {
     }
 
     return { year, months: counts.map((count, index) => ({ month: index + 1, count })) };
+  },
+
+  /// Volumetria de MENSAGENS (não de conversas — uma conversa pode ter várias
+  /// mensagens) por mês do ano corrente: quantas o canal recebeu (INBOUND, do
+  /// cliente) e quantas enviou (OUTBOUND, IA/atendente/sistema/campanha).
+  /// Agregado no Mongo (coleção compartilhada `messages`) em vez de trazer
+  /// documento por documento, já que o volume de mensagens tende a ser bem
+  /// maior que o de sessões.
+  async getMonthlyMessageVolume(user: AuthUser, id: string) {
+    const channel = await this.getById(user, id);
+
+    const year = new Date().getUTCFullYear();
+    const start = new Date(Date.UTC(year, 0, 1));
+    const end = new Date(Date.UTC(year + 1, 0, 1));
+
+    const db = await getMongoDb();
+    const rows = await db
+      .collection<MessageDocument>(MESSAGES_COLLECTION)
+      .aggregate<{ _id: { month: number; direction: "INBOUND" | "OUTBOUND" }; count: number }>([
+        { $match: { whatsappChannelId: channel.id, createdAt: { $gte: start, $lt: end } } },
+        {
+          $group: {
+            _id: { month: { $month: { date: "$createdAt", timezone: "UTC" } }, direction: "$direction" },
+            count: { $sum: 1 },
+          },
+        },
+      ])
+      .toArray();
+
+    const sent = new Array(12).fill(0) as number[];
+    const received = new Array(12).fill(0) as number[];
+    for (const row of rows) {
+      const index = row._id.month - 1;
+      if (row._id.direction === "OUTBOUND") sent[index] = row.count;
+      else if (row._id.direction === "INBOUND") received[index] = row.count;
+    }
+
+    return {
+      year,
+      months: sent.map((count, index) => ({ month: index + 1, sent: count, received: received[index] })),
+    };
   },
 };
