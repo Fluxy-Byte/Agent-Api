@@ -153,4 +153,22 @@ export const queueService = {
       });
     });
   },
+
+  /// Ticket.queueId tem onDelete: Cascade — excluir uma fila com tickets
+  /// apagaria esse histórico de atendimento junto. Por isso bloqueia a
+  /// exclusão de qualquer fila que já tenha tido pelo menos 1 ticket, mesmo
+  /// fechado; só filas nunca usadas podem ser excluídas.
+  async delete(user: AuthUser, serviceIslandId: string, queueId: string) {
+    const existing = await this.getById(user, serviceIslandId, queueId);
+
+    const ticketCount = await prisma.ticket.count({ where: { queueId: existing.id } });
+    if (ticketCount > 0) {
+      throw new ValidationError(
+        `A fila "${existing.name}" tem ${ticketCount} ticket(s) e não pode ser excluída — isso apagaria esse histórico de atendimento junto.`,
+      );
+    }
+
+    await prisma.queue.delete({ where: { id: existing.id } });
+    return existing;
+  },
 };

@@ -188,6 +188,24 @@ queuesRouter.put(
   }),
 );
 
+queuesRouter.delete(
+  "/:queueId",
+  apiHandler({ action: PermissionAction.QUEUES_WRITE }, async (req, _res, user) => {
+    const serviceIslandId = String(req.params.id);
+    const queueId = String(req.params.queueId);
+    const queue = await queueService.delete(user, serviceIslandId, queueId);
+
+    await recordAudit(req, user, {
+      action: "QUEUE_DELETED",
+      resourceType: "Queue",
+      resourceId: queue.id,
+      beforeState: queue,
+    });
+
+    return { deleted: true };
+  }),
+);
+
 tagsRouter.get(
   "/",
   apiHandler({ action: PermissionAction.QUEUES_VIEW }, async (req, _res, user) => {
