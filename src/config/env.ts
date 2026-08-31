@@ -22,6 +22,12 @@ const envSchema = z.object({
 
   INTERNAL_API_KEY: z.string().min(1),
 
+  /// Chave AES-256 (32 bytes em base64) usada pra cifrar/decifrar os tokens
+  /// de terceiro por agente (openaiToken/geminiToken — ver token-cipher.ts).
+  /// PRECISA ser idêntica no Inbound-Service, que decifra pra repassar ao
+  /// AI-Worker — nunca gerar um valor novo sem sincronizar os dois lados.
+  AGENT_TOKEN_ENCRYPTION_KEY: z.string().min(1),
+
   REDIS_HOST: z.string().min(1),
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().min(1),

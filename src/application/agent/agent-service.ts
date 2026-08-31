@@ -1,5 +1,6 @@
 import { AGENT_DEFAULT_MESSAGES, DEFAULT_AGENT_PERSONALITY } from "../../domain/constants/agent-default-messages";
 import { NotFoundError, ValidationError } from "../../domain/errors/app-error";
+import { encryptToken } from "../../infrastructure/crypto/token-cipher";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
 import type { CreateAgentInput, UpdateAgentInput } from "./agent-validation";
@@ -82,6 +83,9 @@ export const agentService = {
         personality: resolveToggleable(input.personality, DEFAULT_AGENT_PERSONALITY),
         ragEnabled: input.ragEnabled ?? false,
         ragChunkSize: input.ragChunkSize ?? null,
+
+        openaiTokenEncrypted: input.openaiToken ? encryptToken(input.openaiToken) : null,
+        geminiTokenEncrypted: input.geminiToken ? encryptToken(input.geminiToken) : null,
       },
     });
   },
@@ -137,6 +141,12 @@ export const agentService = {
         personality: input.personality ?? existing.personality,
         ragEnabled: input.ragEnabled ?? existing.ragEnabled,
         ragChunkSize: input.ragChunkSize === undefined ? existing.ragChunkSize : input.ragChunkSize,
+
+        // Ausente/vazio = mantém o token já salvo — não existe forma de
+        // "limpar" um token por essa rota, só sobrescrever com um novo (mesmo
+        // padrão do metaAccessToken em whatsapp-channel-service.ts).
+        openaiTokenEncrypted: input.openaiToken ? encryptToken(input.openaiToken) : existing.openaiTokenEncrypted,
+        geminiTokenEncrypted: input.geminiToken ? encryptToken(input.geminiToken) : existing.geminiTokenEncrypted,
       },
     });
   },

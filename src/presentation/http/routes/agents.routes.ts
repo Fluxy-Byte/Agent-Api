@@ -8,22 +8,42 @@ import {
 } from "../../../application/rag-document/rag-document-validation";
 import { PermissionAction } from "../../../domain/enums/permission-action";
 import { ValidationError } from "../../../domain/errors/app-error";
+import { previewToken } from "../../../infrastructure/crypto/token-cipher";
 import { apiHandler } from "../middlewares/api-handler";
 import { recordAudit } from "../middlewares/audit";
 
 export const agentsRouter = Router();
 
+/// Nunca deixa os tokens de terceiro (OpenAI/Gemini) saírem em claro pela API
+/// (resposta HTTP ou AuditLog) — a UI só precisa dos 6 primeiros chars pra
+/// confirmar visualmente qual token está configurado.
+function sanitizeAgent<T extends { openaiTokenEncrypted?: string | null; geminiTokenEncrypted?: string | null }>(
+  agent: T,
+): Omit<T, "openaiTokenEncrypted" | "geminiTokenEncrypted"> & {
+  openaiTokenPreview: string | null;
+  geminiTokenPreview: string | null;
+} {
+  const { openaiTokenEncrypted, geminiTokenEncrypted, ...rest } = agent;
+  return {
+    ...rest,
+    openaiTokenPreview: previewToken(openaiTokenEncrypted ?? null),
+    geminiTokenPreview: previewToken(geminiTokenEncrypted ?? null),
+  };
+}
+
 agentsRouter.get(
   "/",
   apiHandler({ action: PermissionAction.AGENTS_VIEW }, async (_req, _res, user) => {
-    return agentService.list(user);
+    const agents = await agentService.list(user);
+    return agents.map(sanitizeAgent);
   }),
 );
 
 agentsRouter.get(
   "/:id",
   apiHandler({ action: PermissionAction.AGENTS_VIEW }, async (req, _res, user) => {
-    return agentService.getById(user, String(req.params.id));
+    const agent = await agentService.getById(user, String(req.params.id));
+    return sanitizeAgent(agent);
   }),
 );
 
@@ -34,14 +54,15 @@ agentsRouter.post(
     if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
 
     const agent = await agentService.create(user, parsed.data);
+    const safeAgent = sanitizeAgent(agent);
     await recordAudit(req, user, {
       action: "AGENT_CREATED",
       resourceType: "Agent",
       resourceId: agent.id,
-      afterState: agent,
+      afterState: safeAgent,
     });
 
-    return agent;
+    return safeAgent;
   }),
 );
 
@@ -54,16 +75,17 @@ agentsRouter.put(
     const id = String(req.params.id);
     const before = await agentService.getById(user, id);
     const agent = await agentService.update(user, id, parsed.data);
+    const safeAgent = sanitizeAgent(agent);
 
     await recordAudit(req, user, {
       action: "AGENT_UPDATED",
       resourceType: "Agent",
       resourceId: agent.id,
-      beforeState: before,
-      afterState: agent,
+      beforeState: sanitizeAgent(before),
+      afterState: safeAgent,
     });
 
-    return agent;
+    return safeAgent;
   }),
 );
 

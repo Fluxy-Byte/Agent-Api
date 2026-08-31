@@ -254,6 +254,15 @@ model Agent {
   /// — só relevante quando ragEnabled=true.
   ragChunkSize Int?
 
+  /// Tokens de terceiro usados pelo AI-Worker deste agente especificamente —
+  /// OpenAI (busca RAG) e Gemini (geração via ADK do Google). Sempre cifrados
+  /// (AES-256-GCM, ver infrastructure/crypto/token-cipher.ts); nunca gravados
+  /// nem devolvidos em claro pela API — a UI só vê os 6 primeiros chars (ver
+  /// sanitizeAgent em agents.routes.ts). O Inbound-Service decifra na hora de
+  /// montar o payload publicado pro AI-Worker (nunca usa isso direto do env).
+  openaiTokenEncrypted String?
+  geminiTokenEncrypted String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

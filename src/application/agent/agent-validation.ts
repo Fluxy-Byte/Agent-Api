@@ -27,6 +27,11 @@ export const createAgentSchema = z.object({
   personality: optionalMessage,
   ragEnabled: z.boolean().optional(),
   ragChunkSize: z.number().int().min(100).max(4000).optional(),
+
+  /// Em claro aqui só nesta requisição — cifrados antes de gravar (ver
+  /// agent-service.ts). Ausente/vazio = mantém o token já salvo, nunca limpa.
+  openaiToken: z.string().trim().min(1).optional(),
+  geminiToken: z.string().trim().min(1).optional(),
 });
 
 export const updateAgentSchema = createAgentSchema.partial();
