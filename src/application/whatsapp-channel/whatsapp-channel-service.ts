@@ -1,6 +1,11 @@
 import { ConflictError, NotFoundError, ValidationError } from "../../domain/errors/app-error";
 import { prisma } from "../../infrastructure/database/prisma/client";
-import { getTemplateVariableCount, listWabaPhoneNumbers, listWabaTemplates } from "../../infrastructure/meta/meta-graph-client";
+import {
+  getPhoneNumberStatus,
+  getTemplateVariableCount,
+  listWabaPhoneNumbers,
+  listWabaTemplates,
+} from "../../infrastructure/meta/meta-graph-client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
 import type {
   BulkCreateWhatsappChannelInput,
@@ -181,5 +186,40 @@ export const whatsappChannelService = {
       components: t.components,
       variableCount: getTemplateVariableCount(t.components),
     }));
+  },
+
+  /// Status/qualidade do número na Meta (tela de detalhe do canal) — consulta
+  /// ao vivo, nunca cacheada, pra sempre refletir o estado atual.
+  async getPhoneStatus(user: AuthUser, id: string) {
+    const channel = await this.getById(user, id);
+    if (!channel.metaAccessToken) {
+      throw new ValidationError("Este canal ainda não tem um token de acesso da Meta cadastrado.");
+    }
+
+    return getPhoneNumberStatus(channel.phoneNumberId, channel.metaAccessToken);
+  },
+
+  /// Quantidade de MessagingSession (nossa definição de "conversa" — uma
+  /// janela de atendimento aberta pelo cliente) por mês do ano corrente, pra
+  /// alimentar o gráfico da tela de detalhe do canal. Sempre devolve os 12
+  /// meses, com 0 nos que não tiveram conversa nenhuma.
+  async getMonthlyConversations(user: AuthUser, id: string) {
+    const channel = await this.getById(user, id);
+
+    const year = new Date().getUTCFullYear();
+    const start = new Date(Date.UTC(year, 0, 1));
+    const end = new Date(Date.UTC(year + 1, 0, 1));
+
+    const sessions = await prisma.messagingSession.findMany({
+      where: { whatsappChannelId: channel.id, startedAt: { gte: start, lt: end } },
+      select: { startedAt: true },
+    });
+
+    const counts = new Array(12).fill(0) as number[];
+    for (const session of sessions) {
+      counts[session.startedAt.getUTCMonth()] += 1;
+    }
+
+    return { year, months: counts.map((count, index) => ({ month: index + 1, count })) };
   },
 };

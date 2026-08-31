@@ -65,6 +65,20 @@ whatsappChannelsRouter.get(
   }),
 );
 
+whatsappChannelsRouter.get(
+  "/:id/status",
+  apiHandler({ action: PermissionAction.WABAS_VIEW }, async (req, _res, user) => {
+    return whatsappChannelService.getPhoneStatus(user, String(req.params.id));
+  }),
+);
+
+whatsappChannelsRouter.get(
+  "/:id/conversations-by-month",
+  apiHandler({ action: PermissionAction.WABAS_VIEW }, async (req, _res, user) => {
+    return whatsappChannelService.getMonthlyConversations(user, String(req.params.id));
+  }),
+);
+
 whatsappChannelsRouter.post(
   "/waba-lookup",
   apiHandler({ action: PermissionAction.WABAS_WRITE }, async (req) => {

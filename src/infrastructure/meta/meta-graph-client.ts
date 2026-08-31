@@ -31,6 +31,41 @@ export async function listWabaPhoneNumbers(wabaId: string, accessToken: string):
   return body.data ?? [];
 }
 
+export interface MetaPhoneNumberStatus {
+  id: string;
+  display_phone_number?: string;
+  verified_name?: string;
+  /// Estado de conexão do número na Meta (ex: CONNECTED, PENDING, FLAGGED,
+  /// RESTRICTED, RATE_LIMITED, BANNED) — nem toda versão da Graph API retorna
+  /// esse campo pra todo número, por isso é opcional.
+  status?: string;
+  /// GREEN | YELLOW | RED | UNKNOWN — qualidade do número, afeta o quanto ele
+  /// pode enviar sem ser limitado pela Meta.
+  quality_rating?: string;
+  name_status?: string;
+  code_verification_status?: string;
+  messaging_limit_tier?: string;
+  throughput?: { level?: string };
+}
+
+/// Consulta o status/qualidade de um número específico na Graph API — campos
+/// não suportados pela versão da API ou não aplicáveis ao número simplesmente
+/// não vêm na resposta (a Meta não retorna erro por isso).
+export async function getPhoneNumberStatus(phoneNumberId: string, accessToken: string): Promise<MetaPhoneNumberStatus> {
+  const fields =
+    "id,display_phone_number,verified_name,status,quality_rating,name_status,code_verification_status,messaging_limit_tier,throughput";
+  const url = `https://graph.facebook.com/${env.META_GRAPH_API_VERSION}/${phoneNumberId}?fields=${fields}`;
+
+  const response = await fetch(`${url}&access_token=${encodeURIComponent(accessToken)}`);
+  const body = (await response.json()) as MetaPhoneNumberStatus & MetaErrorResponse;
+
+  if (!response.ok) {
+    throw new UpstreamError(body.error?.message ?? "Falha ao consultar o status do número na Meta.");
+  }
+
+  return body;
+}
+
 export interface MetaTemplateComponent {
   type: "HEADER" | "BODY" | "FOOTER" | "BUTTONS";
   format?: string;
