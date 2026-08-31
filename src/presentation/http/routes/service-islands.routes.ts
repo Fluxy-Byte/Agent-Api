@@ -196,13 +196,13 @@ queuesRouter.delete(
     const queue = await queueService.delete(user, serviceIslandId, queueId);
 
     await recordAudit(req, user, {
-      action: "QUEUE_DELETED",
+      action: queue.softDeleted ? "QUEUE_DISABLED" : "QUEUE_DELETED",
       resourceType: "Queue",
       resourceId: queue.id,
       beforeState: queue,
     });
 
-    return { deleted: true };
+    return { deleted: true, softDeleted: queue.softDeleted };
   }),
 );
 

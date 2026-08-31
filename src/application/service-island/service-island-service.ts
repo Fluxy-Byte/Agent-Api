@@ -84,7 +84,7 @@ export const serviceIslandService = {
       where: { organizationId: user.activeOrganizationId! },
       include: {
         whatsappChannel: true,
-        queues: { include: { members: { include: { user: true } } } },
+        queues: { where: { deletedAt: null }, include: { members: { include: { user: true } } } },
         closeTags: true,
       },
       orderBy: { createdAt: "desc" },
@@ -96,7 +96,7 @@ export const serviceIslandService = {
       where: { id, organizationId: user.activeOrganizationId! },
       include: {
         whatsappChannel: true,
-        queues: { include: { members: { include: { user: true } } } },
+        queues: { where: { deletedAt: null }, include: { members: { include: { user: true } } } },
         closeTags: { orderBy: { createdAt: "asc" } },
       },
     });

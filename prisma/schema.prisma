@@ -399,6 +399,13 @@ model Queue {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Soft delete: fila com histórico de ticket não pode ser apagada de
+  /// verdade (Ticket.queueId cascadeia on delete — perderia o histórico de
+  /// atendimento). Em vez disso fica marcada aqui e some de toda listagem
+  /// voltada pro usuário (a linha continua existindo só pros tickets antigos
+  /// continuarem apontando pra ela). null = fila ativa normalmente.
+  deletedAt DateTime?
+
   members             QueueMember[]
   tickets             Ticket[]
   defaultForAgents    Agent[]

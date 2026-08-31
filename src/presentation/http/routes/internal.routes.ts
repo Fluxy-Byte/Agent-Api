@@ -60,7 +60,7 @@ const ragDocumentStatusSchema = z.object({
 /// destino de um ticket, a partir da ilha ligada ao WhatsApp Channel do contato.
 internalRouter.get("/service-islands/:id/queues", async (req, res) => {
   const queues = await prisma.queue.findMany({
-    where: { serviceIslandId: String(req.params.id), isActive: true },
+    where: { serviceIslandId: String(req.params.id), isActive: true, deletedAt: null },
     orderBy: { createdAt: "asc" },
   });
 

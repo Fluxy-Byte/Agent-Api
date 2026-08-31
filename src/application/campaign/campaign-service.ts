@@ -48,7 +48,7 @@ async function assertRouteToHumanIsValid(
     return;
   }
 
-  const queue = await prisma.queue.findFirst({ where: { id: routeToQueueId, serviceIslandId } });
+  const queue = await prisma.queue.findFirst({ where: { id: routeToQueueId, serviceIslandId, deletedAt: null } });
   if (!queue) throw new ValidationError("Fila de destino inválida para este canal.");
 
   if (routeToUserId) {

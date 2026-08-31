@@ -17,7 +17,7 @@ function resolveToggleable(value: string | undefined, fallback: string): string 
 
 async function assertQueueBelongsToOrganization(queueId: string, organizationId: string): Promise<void> {
   const queue = await prisma.queue.findFirst({
-    where: { id: queueId, serviceIsland: { organizationId } },
+    where: { id: queueId, serviceIsland: { organizationId }, deletedAt: null },
     select: { id: true },
   });
   if (!queue) throw new ValidationError("Fila padrão inválida para esta empresa.");

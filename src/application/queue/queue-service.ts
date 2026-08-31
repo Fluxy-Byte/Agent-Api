@@ -12,6 +12,9 @@ interface QueueFilter {
 function buildQueueWhere(serviceIslandId: string, filter: QueueFilter): Prisma.QueueWhereInput {
   return {
     serviceIslandId,
+    // Fila soft-deleted nunca aparece pro usuário, em nenhuma listagem —
+    // só continua existindo no banco pros tickets antigos dela.
+    deletedAt: null,
     ...(filter.isActive === undefined ? {} : { isActive: filter.isActive }),
     ...(filter.search ? { name: { contains: filter.search, mode: "insensitive" as const } } : {}),
   };
@@ -83,8 +86,8 @@ export const queueService = {
     await assertServiceIslandBelongsToOrganization(serviceIslandId, user.activeOrganizationId!);
 
     const [total, active] = await Promise.all([
-      prisma.queue.count({ where: { serviceIslandId } }),
-      prisma.queue.count({ where: { serviceIslandId, isActive: true } }),
+      prisma.queue.count({ where: { serviceIslandId, deletedAt: null } }),
+      prisma.queue.count({ where: { serviceIslandId, deletedAt: null, isActive: true } }),
     ]);
 
     return { total, active, inactive: total - active };
@@ -93,7 +96,7 @@ export const queueService = {
   async getById(user: AuthUser, serviceIslandId: string, queueId: string) {
     await assertServiceIslandBelongsToOrganization(serviceIslandId, user.activeOrganizationId!);
     const queue = await prisma.queue.findFirst({
-      where: { id: queueId, serviceIslandId },
+      where: { id: queueId, serviceIslandId, deletedAt: null },
       include: { members: { include: { user: true } } },
     });
     if (!queue) throw new NotFoundError("Fila não encontrada.");
@@ -154,21 +157,27 @@ export const queueService = {
     });
   },
 
-  /// Ticket.queueId tem onDelete: Cascade — excluir uma fila com tickets
-  /// apagaria esse histórico de atendimento junto. Por isso bloqueia a
-  /// exclusão de qualquer fila que já tenha tido pelo menos 1 ticket, mesmo
-  /// fechado; só filas nunca usadas podem ser excluídas.
+  /// Ticket.queueId tem onDelete: Cascade — excluir de verdade uma fila com
+  /// tickets apagaria esse histórico de atendimento junto. Por isso, fila com
+  /// pelo menos 1 ticket (mesmo encerrado) leva soft delete (deletedAt) em
+  /// vez de DELETE: a linha continua no banco pros tickets antigos, mas some
+  /// de toda listagem (buildQueueWhere/getStats/getById já filtram
+  /// deletedAt: null). Só fila nunca usada é excluída de verdade.
   async delete(user: AuthUser, serviceIslandId: string, queueId: string) {
     const existing = await this.getById(user, serviceIslandId, queueId);
 
     const ticketCount = await prisma.ticket.count({ where: { queueId: existing.id } });
     if (ticketCount > 0) {
-      throw new ValidationError(
-        `A fila "${existing.name}" tem ${ticketCount} ticket(s) e não pode ser excluída — isso apagaria esse histórico de atendimento junto.`,
-      );
+      await prisma.$transaction([
+        prisma.queue.update({ where: { id: existing.id }, data: { deletedAt: new Date() } }),
+        // Sem isso, o agente continuaria roteando handoff pra uma fila que
+        // sumiu da UI — ninguém veria os tickets caindo lá.
+        prisma.agent.updateMany({ where: { defaultQueueId: existing.id }, data: { defaultQueueId: null } }),
+      ]);
+      return { ...existing, softDeleted: true as const };
     }
 
     await prisma.queue.delete({ where: { id: existing.id } });
-    return existing;
+    return { ...existing, softDeleted: false as const };
   },
 };
