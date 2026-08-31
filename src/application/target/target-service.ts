@@ -1,6 +1,7 @@
 import { Prisma } from "../../../generated/prisma/client";
 import { MESSAGES_COLLECTION, type MessageDocument } from "../../domain/contracts/message-document";
 import { ConflictError, NotFoundError } from "../../domain/errors/app-error";
+import { normalizeBrazilianWaId } from "../../domain/utils/phone";
 import { getMongoDb } from "../../infrastructure/database/mongo/client";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
@@ -99,7 +100,7 @@ export const targetService = {
         data: {
           organizationId: user.activeOrganizationId!,
           whatsappChannelId: channel.id,
-          waId: input.phone,
+          waId: normalizeBrazilianWaId(input.phone),
           name: input.name || undefined,
           email: input.email || undefined,
         },
