@@ -18,26 +18,27 @@ datasource db {
 // ---------- BETTER AUTH (core + plugins organization/admin) ----------
 
 model User {
-  id               String       @id
-  name             String
-  email            String
-  emailVerified    Boolean      @default(false)
-  image            String?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  id                        String             @id
+  name                      String
+  email                     String
+  emailVerified             Boolean            @default(false)
+  image                     String?
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
   /// Flag de plataforma do plugin admin do Better Auth. role === "admin" ⇒
   /// Administrador global (ignora a matriz de permissões por organização).
-  role             String?
-  banned           Boolean?     @default(false)
-  banReason        String?
-  banExpires       DateTime?
-  sessions         Session[]
-  accounts         Account[]
-  members          Member[]
-  invitations      Invitation[]
-  queueMemberships    QueueMember[]
-  assignedTickets     Ticket[]
-  campaignsRoutedToMe Campaign[] @relation("CampaignRouteToUser")
+  role                      String?
+  banned                    Boolean?           @default(false)
+  banReason                 String?
+  banExpires                DateTime?
+  sessions                  Session[]
+  accounts                  Account[]
+  members                   Member[]
+  invitations               Invitation[]
+  invitationMembersRedeemed InvitationMember[]
+  queueMemberships          QueueMember[]
+  assignedTickets           Ticket[]
+  campaignsRoutedToMe       Campaign[]         @relation("CampaignRouteToUser")
 
   @@unique([email])
   @@map("user")
@@ -94,29 +95,30 @@ model Verification {
 }
 
 model Organization {
-  id        String   @id
-  name      String
-  slug      String
-  logo      String?
-  createdAt DateTime
-  metadata  String?
-  cnpj      String
-  status    String?  @default("ACTIVE")
+  id            String   @id
+  name          String
+  slug          String
+  logo          String?
+  createdAt     DateTime
+  metadata      String?
+  cnpj          String
+  status        String?  @default("ACTIVE")
   /// Token de acesso à API externa (Fluxy Agents) — gerado sob demanda na tela
   /// de Acessos, nunca devolvido em claro depois de gerado (ver company-service.ts).
-  tokenAcessApi String? @unique
+  tokenAcessApi String?  @unique
 
-  members          Member[]
-  invitations      Invitation[]
-  agents           Agent[]
-  whatsappChannels WhatsappChannel[]
-  serviceIslands   ServiceIsland[]
-  targets          Target[]
-  tickets          Ticket[]
-  ticketCounter    TicketCounter?
-  campaigns        Campaign[]
-  auditLogs        AuditLog[]
-  errorLogs        ErrorLog[]
+  members           Member[]
+  invitations       Invitation[]
+  invitationMembers InvitationMember[]
+  agents            Agent[]
+  whatsappChannels  WhatsappChannel[]
+  serviceIslands    ServiceIsland[]
+  targets           Target[]
+  tickets           Ticket[]
+  ticketCounter     TicketCounter?
+  campaigns         Campaign[]
+  auditLogs         AuditLog[]
+  errorLogs         ErrorLog[]
 
   @@unique([slug])
   @@map("organization")
@@ -174,6 +176,29 @@ model Invitation {
   @@map("invitation")
 }
 
+/// Convite por código (distinto do model Invitation acima, que é o convite por
+/// e-mail do plugin organization do Better Auth). O Gerente gera um code único
+/// na tela de Acessos escolhendo o papel (role) que será concedido, e o
+/// repassa por fora (ex: WhatsApp) para a pessoa digitar na tela de cadastro.
+/// finish=true ⇒ code ainda não utilizado; finish=false ⇒ já resgatado — nesse
+/// caso userId aponta pra quem resgatou. Nunca é reaberto: um code gasto vira
+/// histórico, um novo convite exige gerar outro code.
+model InvitationMember {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String       @unique
+  role           String
+  finish         Boolean      @default(true)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@map("invitation_member")
+}
+
 // ---------- AGENT ----------
 
 /// Todo agente tem 7 campos de mensagem. processingMessage, transferMessage e
@@ -181,14 +206,14 @@ model Invitation {
 /// outros 4 (welcome/outOfHours/closing/error) têm um par mensagem+enabled: se
 /// enabled=false, a IA gera a resposta livremente naquele cenário.
 model Agent {
-  id             String  @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
-  isActive       Boolean @default(true)
+  isActive       Boolean      @default(true)
 
-  welcomeMessage  String
-  welcomeEnabled  Boolean @default(true)
+  welcomeMessage String
+  welcomeEnabled Boolean @default(true)
 
   /// Obrigatória, sem toggle de desativação.
   processingMessage String
@@ -276,12 +301,12 @@ model WhatsappChannel {
   agentId        String
   agent          Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
-  phoneNumberId String @unique
-  displayNumber String
+  phoneNumberId   String  @unique
+  displayNumber   String
   /// WhatsApp Business Account ID — usado exclusivamente para buscar os
   /// templates aprovados pela Meta deste canal. Não é único: um WABA pode ter
   /// vários números de telefone, cada um virando seu próprio WhatsappChannel.
-  wabaId        String
+  wabaId          String
   /// Token de acesso da Meta para este WABA — informado pelo usuário no
   /// cadastro/busca do canal. Nunca retornado em claro pela API (ver
   /// whatsapp-channels.routes.ts); usado pelo Outbound-Worker/Campaign-Worker
@@ -313,7 +338,7 @@ model ServiceIsland {
 
   /// Se true, o Desk-Worker/Desk-API recusa encerrar um ticket de qualquer fila
   /// desta ilha sem uma TicketCloseTag selecionada.
-  requireCloseTag Boolean @default(false)
+  requireCloseTag     Boolean @default(false)
   /// Se true, atendentes de qualquer fila desta ilha podem disparar campanha
   /// ativa pelo Fluxy Desk (ver Desk-API POST /dispatch).
   allowActiveDispatch Boolean @default(false)
@@ -363,7 +388,7 @@ model Queue {
   members             QueueMember[]
   tickets             Ticket[]
   defaultForAgents    Agent[]
-  campaignsRoutedHere Campaign[] @relation("CampaignRouteToQueue")
+  campaignsRoutedHere Campaign[]    @relation("CampaignRouteToQueue")
 
   @@index([serviceIslandId])
 }
@@ -396,16 +421,16 @@ model Target {
   whatsappChannel   WhatsappChannel @relation(fields: [whatsappChannelId], references: [id], onDelete: Cascade)
 
   /// wa_id da Meta (telefone normalizado). Identidade real do contato.
-  waId  String
-  name  String?
-  email String?
+  waId     String
+  name     String?
+  email    String?
   /// Pares key:value livres, editáveis no Agent Console (leitura) e Desk Console
   /// (edição), via input de chave + input de valor.
   metadata Json?
 
-  status              TargetStatus @default(AI)
-  firstInteractionAt  DateTime     @default(now())
-  lastInteractionAt   DateTime?
+  status             TargetStatus @default(AI)
+  firstInteractionAt DateTime     @default(now())
+  lastInteractionAt  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -432,9 +457,9 @@ enum SessionOrigin {
 /// próprio cliente) sempre cria uma NOVA linha; a anterior fica só para
 /// histórico/auditoria.
 model MessagingSession {
-  id                String   @id @default(cuid())
+  id                String @id @default(cuid())
   targetId          String
-  target            Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  target            Target @relation(fields: [targetId], references: [id], onDelete: Cascade)
   whatsappChannelId String
 
   createdVia             SessionOrigin @default(CUSTOMER_MESSAGE)
@@ -474,9 +499,9 @@ enum CampaignDispatchType {
 /// Campaign-Worker, que processa contato a contato e vai incrementando os
 /// contadores abaixo até virar COMPLETED.
 model Campaign {
-  id                String       @id @default(cuid())
+  id                String          @id @default(cuid())
   organizationId    String
-  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   whatsappChannelId String
   whatsappChannel   WhatsappChannel @relation(fields: [whatsappChannelId], references: [id], onDelete: Cascade)
 
@@ -508,8 +533,8 @@ model Campaign {
   routeToQueue   Queue?  @relation("CampaignRouteToQueue", fields: [routeToQueueId], references: [id], onDelete: SetNull)
   /// Só usado se routeToQueueId estiver preenchido — atendente já assume o
   /// ticket (IN_PROGRESS) em vez de cair WAITING na fila.
-  routeToUserId String?
-  routeToUser   User?   @relation("CampaignRouteToUser", fields: [routeToUserId], references: [id], onDelete: SetNull)
+  routeToUserId  String?
+  routeToUser    User?   @relation("CampaignRouteToUser", fields: [routeToUserId], references: [id], onDelete: SetNull)
 
   sentAt    DateTime @default(now())
   createdAt DateTime @default(now())
@@ -533,7 +558,7 @@ model CampaignTarget {
   status     CampaignTargetStatus @default(SENT)
 
   /// Corpo cru da resposta da Meta (debug de falhas).
-  response String?
+  response  String?
   /// wamid retornado pela Meta ao enviar o template.
   messageId String?
   /// Snapshot das variáveis (header/body/button) preenchidas para esse contato —
@@ -564,15 +589,15 @@ enum TicketCloseReason {
 }
 
 model Ticket {
-  id             String       @id @default(cuid())
+  id                 String           @id @default(cuid())
   /// Sequencial por organização, gerado via TicketCounter (upsert atômico).
-  ticketNumber   Int
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  queueId        String
-  queue          Queue        @relation(fields: [queueId], references: [id], onDelete: Cascade)
-  targetId       String
-  target         Target       @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  ticketNumber       Int
+  organizationId     String
+  organization       Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  queueId            String
+  queue              Queue            @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  targetId           String
+  target             Target           @relation(fields: [targetId], references: [id], onDelete: Cascade)
   messagingSessionId String
   messagingSession   MessagingSession @relation(fields: [messagingSessionId], references: [id], onDelete: Cascade)
 
@@ -582,7 +607,7 @@ model Ticket {
   /// atendente que "puxou" o ticket (claim atômico, ver migration para o
   /// índice único parcial que impede mais de um ticket aberto por sessão).
   assignedUserId String?
-  assignedUser   User?   @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  assignedUser   User?     @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
   assignedAt     DateTime?
 
   /// Ticket que originou este (transferência de fila ou de atendente fecha o
@@ -602,8 +627,8 @@ model Ticket {
   /// Throttle do reenvio de transferMessage enquanto o ticket está WAITING.
   lastWaitingMessageSentAt DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   closedAt  DateTime?
 
   messages TicketMessage[]
@@ -642,15 +667,15 @@ enum MessageType {
 /// Rastro (ids + tipo, sem conteúdo — o conteúdo mora no Mongo) de cada
 /// mensagem trocada dentro de um ticket.
 model TicketMessage {
-  id           String              @id @default(cuid())
-  ticketId     String
-  ticket       Ticket              @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  senderType   TicketMessageSender
-  senderUserId String?
+  id             String              @id @default(cuid())
+  ticketId       String
+  ticket         Ticket              @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderType     TicketMessageSender
+  senderUserId   String?
   /// _id do documento correspondente na collection `messages` do Mongo.
   mongoMessageId String?
-  messageType    MessageType        @default(TEXT)
-  createdAt      DateTime           @default(now())
+  messageType    MessageType         @default(TEXT)
+  createdAt      DateTime            @default(now())
 
   @@index([ticketId])
 }
