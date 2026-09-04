@@ -6,9 +6,6 @@ export const createAgentSchema = z.object({
   name: z.string().trim().min(1, "Nome é obrigatório."),
   isActive: z.boolean().optional(),
 
-  welcomeMessage: optionalMessage,
-  welcomeEnabled: z.boolean().optional(),
-
   processingMessage: optionalMessage,
   transferMessage: optionalMessage,
   unsupportedFormatMessage: optionalMessage,

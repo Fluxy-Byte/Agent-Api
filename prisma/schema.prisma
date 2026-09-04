@@ -205,9 +205,9 @@ model InvitationMember {
 
 // ---------- AGENT ----------
 
-/// Todo agente tem 7 campos de mensagem. processingMessage, transferMessage e
+/// Todo agente tem 6 campos de mensagem. processingMessage, transferMessage e
 /// unsupportedFormatMessage são OBRIGATÓRIOS (sem toggle — sempre ativos). Os
-/// outros 4 (welcome/outOfHours/closing/error) têm um par mensagem+enabled: se
+/// outros 3 (outOfHours/closing/error) têm um par mensagem+enabled: se
 /// enabled=false, a IA gera a resposta livremente naquele cenário.
 model Agent {
   id             String       @id @default(cuid())
@@ -215,9 +215,6 @@ model Agent {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
   isActive       Boolean      @default(true)
-
-  welcomeMessage String
-  welcomeEnabled Boolean @default(true)
 
   /// Obrigatória, sem toggle de desativação.
   processingMessage String

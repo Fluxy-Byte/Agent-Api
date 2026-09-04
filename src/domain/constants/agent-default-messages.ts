@@ -3,7 +3,6 @@
 /// realmente salvo é sempre explícito no banco (não há "herança" de default em
 /// runtime), então trocar esta constante não afeta agentes já criados.
 export const AGENT_DEFAULT_MESSAGES = {
-  welcomeMessage: "Olá! 👋 Seja bem-vindo(a). Como posso te ajudar hoje?",
   processingMessage: "Estamos pensando na resposta, aguarde um instante.",
   transferMessage: "Vou te encaminhar para um de nossos atendentes. Aguarde só um instante.",
   unsupportedFormatMessage: "Desculpe, ainda não consigo processar esse tipo de mensagem. Pode me enviar em texto?",
@@ -20,8 +19,8 @@ export const AGENT_DEFAULT_MESSAGES = {
 export const DEFAULT_AGENT_PERSONALITY =
   "Comunique-se de forma cordial, clara e objetiva, como um atendente profissional e prestativo.";
 
-/// Campos obrigatórios (sem switch de desativação). Os outros quatro
-/// (welcome/outOfHours/closing/error) têm par mensagem+enabled, e quando
+/// Campos obrigatórios (sem switch de desativação). Os outros três
+/// (outOfHours/closing/error) têm par mensagem+enabled, e quando
 /// enabled=false "a Inteligência Artificial pode gerar qualquer resposta"
 /// naquele cenário.
 export const REQUIRED_AGENT_MESSAGE_FIELDS = [
@@ -32,7 +31,6 @@ export const REQUIRED_AGENT_MESSAGE_FIELDS = [
 ] as const;
 
 export const TOGGLEABLE_AGENT_MESSAGE_FIELDS = [
-  "welcomeMessage",
   "outOfHoursMessage",
   "closingMessage",
   "errorMessage",

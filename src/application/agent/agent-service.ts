@@ -53,9 +53,6 @@ export const agentService = {
         name: input.name,
         isActive: input.isActive ?? true,
 
-        welcomeMessage: resolveToggleable(input.welcomeMessage, AGENT_DEFAULT_MESSAGES.welcomeMessage),
-        welcomeEnabled: input.welcomeEnabled ?? true,
-
         processingMessage: resolveRequired(
           input.processingMessage,
           "Mensagem de processando",
@@ -131,9 +128,6 @@ export const agentService = {
       data: {
         name: input.name ?? existing.name,
         isActive: input.isActive ?? existing.isActive,
-
-        welcomeMessage: input.welcomeMessage ?? existing.welcomeMessage,
-        welcomeEnabled: input.welcomeEnabled ?? existing.welcomeEnabled,
 
         processingMessage: nextProcessing,
         transferMessage: nextTransfer,
