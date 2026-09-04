@@ -54,9 +54,8 @@ export const targetService = {
   /// filtros de `list()` (sem paginação), sempre recalculadas na hora.
   async getStats(user: AuthUser, filter: ListTargetsFilter) {
     const where = buildTargetWhere(user, filter);
-    const organizationId = user.activeOrganizationId!;
 
-    const [total, active, lastInteraction, topChannel] = await Promise.all([
+    const [total, active, lastInteraction, topChannel, matchingTargets] = await Promise.all([
       prisma.target.count({ where }),
       prisma.target.count({ where: { ...where, status: { not: "FINISHED" } } }),
       prisma.target.findFirst({ where, orderBy: { lastInteractionAt: "desc" }, select: { lastInteractionAt: true } }),
@@ -67,6 +66,7 @@ export const targetService = {
         orderBy: { _count: { whatsappChannelId: "desc" } },
         take: 1,
       }),
+      prisma.target.findMany({ where, select: { id: true } }),
     ]);
 
     let primaryAgentName: string | null = null;
@@ -78,11 +78,21 @@ export const targetService = {
       primaryAgentName = channel?.agent.name ?? null;
     }
 
+    // Contagem de mensagens (não de Target) numa janela rolante de 24h — por
+    // isso precisa resolver os ids dos Target que batem com o filtro atual
+    // (mesmo `where` do resto do card) em vez de só filtrar por
+    // organizationId, senão esse número ignora canal/agente/busca aplicados
+    // na tela enquanto os outros cards respeitam.
+    const targetIds = matchingTargets.map((t) => t.id);
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const db = await getMongoDb();
-    const interactionsToday = await db
-      .collection<MessageDocument>(MESSAGES_COLLECTION)
-      .countDocuments({ organizationId, createdAt: { gte: since24h } });
+    const interactionsToday =
+      targetIds.length === 0
+        ? 0
+        : await db.collection<MessageDocument>(MESSAGES_COLLECTION).countDocuments({
+            targetId: { $in: targetIds },
+            createdAt: { $gte: since24h },
+          });
 
     return {
       total,
