@@ -268,6 +268,19 @@ model Agent {
   openaiTokenEncrypted String?
   geminiTokenEncrypted String?
 
+  /// Soft delete — mesmo padrão de Queue.deletedAt, mas SEM o fallback pra
+  /// hard-delete que Queue tem: Agent nunca é apagado de verdade, porque
+  /// WhatsappChannel.agent tem onDelete: Cascade (apagar o Agent de verdade
+  /// levaria junto o(s) canal(is), ilha(s), filas, contatos... uma cascata
+  /// grande demais pra arriscar). Por isso o service BLOQUEIA a exclusão
+  /// enquanto existir qualquer WhatsappChannel apontando pra este agente, em
+  /// vez de soft-deletar por baixo do pano. null = agente ativo normalmente.
+  /// Some de toda listagem/seleção de configuração (lista de agentes,
+  /// vínculo de WhatsApp Channel) mas continua resolvível por id — filtros e
+  /// telas de informação (ex: agente de uma campanha antiga) continuam
+  /// mostrando ele normalmente.
+  deletedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -37,5 +37,13 @@ export const createAgentSchema = z.object({
 
 export const updateAgentSchema = createAgentSchema.partial();
 
+/// includeDeleted=true é usado só pelos seletores de FILTRO (Contatos,
+/// Campanhas) — telas de configuração (lista de agentes, vínculo de
+/// WhatsApp Channel) nunca passam isso, então continuam vendo só os ativos.
+export const listAgentsQuerySchema = z.object({
+  includeDeleted: z.coerce.boolean().optional(),
+});
+
 export type CreateAgentInput = z.infer<typeof createAgentSchema>;
 export type UpdateAgentInput = z.infer<typeof updateAgentSchema>;
+export type ListAgentsQuery = z.infer<typeof listAgentsQuerySchema>;

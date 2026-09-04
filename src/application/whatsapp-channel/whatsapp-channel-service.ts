@@ -16,7 +16,10 @@ import type {
 } from "./whatsapp-channel-validation";
 
 async function assertAgentBelongsToOrganization(agentId: string, organizationId: string): Promise<void> {
-  const agent = await prisma.agent.findFirst({ where: { id: agentId, organizationId }, select: { id: true } });
+  const agent = await prisma.agent.findFirst({
+    where: { id: agentId, organizationId, deletedAt: null },
+    select: { id: true },
+  });
   if (!agent) throw new ValidationError("Agente inválido para esta empresa.");
 }
 

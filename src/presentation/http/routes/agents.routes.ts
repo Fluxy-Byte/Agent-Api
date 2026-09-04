@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { agentService } from "../../../application/agent/agent-service";
-import { createAgentSchema, updateAgentSchema } from "../../../application/agent/agent-validation";
+import { createAgentSchema, listAgentsQuerySchema, updateAgentSchema } from "../../../application/agent/agent-validation";
 import { ragDocumentService } from "../../../application/rag-document/rag-document-service";
 import {
   createRagDocumentSchema,
@@ -33,8 +33,11 @@ function sanitizeAgent<T extends { openaiTokenEncrypted?: string | null; geminiT
 
 agentsRouter.get(
   "/",
-  apiHandler({ action: PermissionAction.AGENTS_VIEW }, async (_req, _res, user) => {
-    const agents = await agentService.list(user);
+  apiHandler({ action: PermissionAction.AGENTS_VIEW }, async (req, _res, user) => {
+    const parsed = listAgentsQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Filtros inválidos.", parsed.error.flatten());
+
+    const agents = await agentService.list(user, parsed.data);
     return agents.map(sanitizeAgent);
   }),
 );
@@ -86,6 +89,25 @@ agentsRouter.put(
     });
 
     return safeAgent;
+  }),
+);
+
+agentsRouter.delete(
+  "/:id",
+  apiHandler({ action: PermissionAction.AGENTS_WRITE }, async (req, _res, user) => {
+    const id = String(req.params.id);
+    const before = await agentService.getById(user, id);
+    const agent = await agentService.delete(user, id);
+
+    await recordAudit(req, user, {
+      action: "AGENT_DELETED",
+      resourceType: "Agent",
+      resourceId: agent.id,
+      beforeState: sanitizeAgent(before),
+      afterState: sanitizeAgent(agent),
+    });
+
+    return sanitizeAgent(agent);
   }),
 );
 

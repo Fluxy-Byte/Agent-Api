@@ -3,7 +3,7 @@ import { NotFoundError, ValidationError } from "../../domain/errors/app-error";
 import { encryptToken } from "../../infrastructure/crypto/token-cipher";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
-import type { CreateAgentInput, UpdateAgentInput } from "./agent-validation";
+import type { CreateAgentInput, ListAgentsQuery, UpdateAgentInput } from "./agent-validation";
 
 function resolveRequired(value: string | undefined, label: string, fallback: string): string {
   if (value === undefined) return fallback;
@@ -24,9 +24,12 @@ async function assertQueueBelongsToOrganization(queueId: string, organizationId:
 }
 
 export const agentService = {
-  async list(user: AuthUser) {
+  async list(user: AuthUser, query: ListAgentsQuery = {}) {
     return prisma.agent.findMany({
-      where: { organizationId: user.activeOrganizationId! },
+      where: {
+        organizationId: user.activeOrganizationId!,
+        ...(query.includeDeleted ? {} : { deletedAt: null }),
+      },
       orderBy: { createdAt: "desc" },
     });
   },
@@ -159,5 +162,26 @@ export const agentService = {
         geminiTokenEncrypted: input.geminiToken ? encryptToken(input.geminiToken) : existing.geminiTokenEncrypted,
       },
     });
+  },
+
+  /// Nunca hard-delete (ver comentário de Agent.deletedAt no schema) —
+  /// bloqueia de vez se algum WhatsApp Channel ainda apontar pro agente, em
+  /// vez de soft-deletar por baixo dele. Idempotente: chamar de novo num
+  /// agente já excluído não faz nada.
+  async delete(user: AuthUser, id: string) {
+    const agent = await prisma.agent.findFirst({
+      where: { id, organizationId: user.activeOrganizationId! },
+      include: { whatsappChannels: { select: { id: true } } },
+    });
+    if (!agent) throw new NotFoundError("Agente não encontrado.");
+    if (agent.deletedAt) return agent;
+
+    if (agent.whatsappChannels.length > 0) {
+      throw new ValidationError(
+        "Não é possível excluir um agente vinculado a um WhatsApp Channel. Desvincule-o (troque o agente do canal) antes de excluir.",
+      );
+    }
+
+    return prisma.agent.update({ where: { id: agent.id }, data: { deletedAt: new Date() } });
   },
 };
