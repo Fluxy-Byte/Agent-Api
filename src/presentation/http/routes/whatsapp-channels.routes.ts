@@ -14,13 +14,20 @@ import { recordAudit } from "../middlewares/audit";
 export const whatsappChannelsRouter = Router();
 
 /// Nunca deixa o token da Meta sair em claro pela API (resposta HTTP ou
-/// AuditLog) — o front só precisa saber se o canal já tem um token
-/// configurado ou não.
+/// AuditLog) — o front só recebe os 3 primeiros e os 3 últimos caracteres,
+/// com um número fixo de asteriscos no meio (não varia com o tamanho real
+/// do token, pra não vazar nem esse detalhe). null quando não há token.
+function previewMetaAccessToken(token: string | null | undefined): string | null {
+  if (!token) return null;
+  if (token.length <= 6) return "*".repeat(12);
+  return `${token.slice(0, 3)}${"*".repeat(12)}${token.slice(-3)}`;
+}
+
 function sanitizeChannel<T extends { metaAccessToken?: string | null }>(
   channel: T,
-): Omit<T, "metaAccessToken"> & { hasMetaAccessToken: boolean } {
+): Omit<T, "metaAccessToken"> & { metaAccessTokenPreview: string | null } {
   const { metaAccessToken, ...rest } = channel;
-  return { ...rest, hasMetaAccessToken: Boolean(metaAccessToken) };
+  return { ...rest, metaAccessTokenPreview: previewMetaAccessToken(metaAccessToken) };
 }
 
 whatsappChannelsRouter.get(
