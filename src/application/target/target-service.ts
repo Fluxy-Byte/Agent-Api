@@ -86,18 +86,27 @@ export const targetService = {
     const targetIds = matchingTargets.map((t) => t.id);
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const db = await getMongoDb();
-    const interactionsToday =
+    const messagesCollection = db.collection<MessageDocument>(MESSAGES_COLLECTION);
+
+    // interactionsToday = volume de MENSAGENS (cada documento é uma
+    // mensagem individual) na janela; contactsInteractedToday = quantidade
+    // de CONTATOS distintos (Target.id únicos) com pelo menos uma mensagem
+    // na mesma janela — são métricas diferentes de propósito, por isso os
+    // dois cards em vez de um só.
+    const [interactionsToday, distinctTargetIds] =
       targetIds.length === 0
-        ? 0
-        : await db.collection<MessageDocument>(MESSAGES_COLLECTION).countDocuments({
-            targetId: { $in: targetIds },
-            createdAt: { $gte: since24h },
-          });
+        ? [0, []]
+        : await Promise.all([
+            messagesCollection.countDocuments({ targetId: { $in: targetIds }, createdAt: { $gte: since24h } }),
+            messagesCollection.distinct("targetId", { targetId: { $in: targetIds }, createdAt: { $gte: since24h } }),
+          ]);
+    const contactsInteractedToday = distinctTargetIds.length;
 
     return {
       total,
       active,
       interactionsToday,
+      contactsInteractedToday,
       lastInteractionAt: lastInteraction?.lastInteractionAt ?? null,
       primaryAgentName,
     };
