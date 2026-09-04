@@ -446,10 +446,22 @@ model Target {
   whatsappChannelId String
   whatsappChannel   WhatsappChannel @relation(fields: [whatsappChannelId], references: [id], onDelete: Cascade)
 
-  /// wa_id da Meta (telefone normalizado). Identidade real do contato.
-  waId     String
-  name     String?
-  email    String?
+  /// Business-Scoped User ID (contacts[].user_id no webhook da Meta) —
+  /// identidade estável do contato, presente em todo webhook desde abr/2026,
+  /// independente de o usuário ter ativado @username ou não. É o vínculo
+  /// principal de um Target (ver Inbound-Service/target-service.ts); wa_id
+  /// pode ficar ausente quando o usuário ativa username + privacidade de
+  /// telefone. Nullable só porque Target criado manualmente (POST /targets)
+  /// não tem BSUID até o contato mandar mensagem de verdade pelo WhatsApp.
+  bsuid String?
+
+  /// wa_id da Meta (telefone normalizado) — agora OPCIONAL: a Meta omite
+  /// esse campo quando o contato ativou @username e não há troca de
+  /// mensagem/telefone nos últimos 30 dias. Preenchido oportunisticamente
+  /// (nunca apagado por uma mensagem futura que venha sem telefone).
+  waId  String?
+  name  String?
+  email String?
   /// Pares key:value livres, editáveis no Agent Console (leitura) e Desk Console
   /// (edição), via input de chave + input de valor.
   metadata Json?
@@ -472,6 +484,9 @@ model Target {
   tickets           Ticket[]
   campaignTargets   CampaignTarget[]
 
+  /// bsuid é o vínculo principal (Postgres não colide NULLs entre si, então
+  /// múltiplos Target sem bsuid/waId ainda cabem nos dois índices sem briga).
+  @@unique([organizationId, whatsappChannelId, bsuid])
   @@unique([organizationId, whatsappChannelId, waId])
   @@index([organizationId])
   @@index([whatsappChannelId])
