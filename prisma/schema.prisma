@@ -229,6 +229,11 @@ model Agent {
   /// Obrigatória, sem toggle de desativação.
   unsupportedFormatMessage String
 
+  /// Obrigatória, sem toggle de desativação. Enviada no lugar da IA/atendente
+  /// quando o Target que mandou a mensagem tem este agente na sua
+  /// blockedAgentIds (ver Target.blockedAgentIds).
+  blockedMessage String
+
   outOfHoursMessage String
   outOfHoursEnabled Boolean @default(true)
 
@@ -452,6 +457,13 @@ model Target {
   status             TargetStatus @default(AI)
   firstInteractionAt DateTime     @default(now())
   lastInteractionAt  DateTime?
+
+  /// Ids de Agent (mesma organização) que este contato está bloqueado de
+  /// falar — quando o Agent do canal atual está nesta lista, a mensagem
+  /// recebida não é roteada pra IA nem pra atendente, só responde com
+  /// Agent.blockedMessage (ver Inbound-Service/webhook-service.ts). Editável
+  /// só por Supervisor/Gerente via PATCH /:id/blocked-agents.
+  blockedAgentIds String[] @default([])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

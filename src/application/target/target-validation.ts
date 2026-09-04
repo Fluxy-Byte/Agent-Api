@@ -29,7 +29,12 @@ export const createTargetSchema = z.object({
   email: z.string().trim().email().optional().or(z.literal("")),
 });
 
+export const updateBlockedAgentsSchema = z.object({
+  blockedAgentIds: z.array(z.string().trim().min(1)),
+});
+
 export type ListTargetsFilter = z.infer<typeof listTargetsFilterSchema>;
 export type ListTargetsQuery = z.infer<typeof listTargetsQuerySchema>;
 export type HistoryQuery = z.infer<typeof historyQuerySchema>;
 export type CreateTargetInput = z.infer<typeof createTargetSchema>;
+export type UpdateBlockedAgentsInput = z.infer<typeof updateBlockedAgentsSchema>;

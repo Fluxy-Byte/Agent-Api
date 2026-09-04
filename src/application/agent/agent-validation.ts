@@ -12,6 +12,7 @@ export const createAgentSchema = z.object({
   processingMessage: optionalMessage,
   transferMessage: optionalMessage,
   unsupportedFormatMessage: optionalMessage,
+  blockedMessage: optionalMessage,
 
   outOfHoursMessage: optionalMessage,
   outOfHoursEnabled: z.boolean().optional(),

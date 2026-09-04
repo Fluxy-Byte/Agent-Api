@@ -68,6 +68,11 @@ export const agentService = {
           "Mensagem de formato não suportado",
           AGENT_DEFAULT_MESSAGES.unsupportedFormatMessage,
         ),
+        blockedMessage: resolveRequired(
+          input.blockedMessage,
+          "Mensagem para números bloqueados",
+          AGENT_DEFAULT_MESSAGES.blockedMessage,
+        ),
 
         outOfHoursMessage: resolveToggleable(input.outOfHoursMessage, AGENT_DEFAULT_MESSAGES.outOfHoursMessage),
         outOfHoursEnabled: input.outOfHoursEnabled ?? true,
@@ -113,6 +118,10 @@ export const agentService = {
             "Mensagem de formato não suportado",
             existing.unsupportedFormatMessage,
           );
+    const nextBlocked =
+      input.blockedMessage === undefined
+        ? existing.blockedMessage
+        : resolveRequired(input.blockedMessage, "Mensagem para números bloqueados", existing.blockedMessage);
 
     return prisma.agent.update({
       where: { id: existing.id },
@@ -126,6 +135,7 @@ export const agentService = {
         processingMessage: nextProcessing,
         transferMessage: nextTransfer,
         unsupportedFormatMessage: nextUnsupported,
+        blockedMessage: nextBlocked,
 
         outOfHoursMessage: input.outOfHoursMessage ?? existing.outOfHoursMessage,
         outOfHoursEnabled: input.outOfHoursEnabled ?? existing.outOfHoursEnabled,

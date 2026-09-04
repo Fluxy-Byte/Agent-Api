@@ -1,11 +1,17 @@
 import { Prisma } from "../../../generated/prisma/client";
 import { MESSAGES_COLLECTION, type MessageDocument } from "../../domain/contracts/message-document";
-import { ConflictError, NotFoundError } from "../../domain/errors/app-error";
+import { ConflictError, NotFoundError, ValidationError } from "../../domain/errors/app-error";
 import { normalizeBrazilianWaId } from "../../domain/utils/phone";
 import { getMongoDb } from "../../infrastructure/database/mongo/client";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
-import type { CreateTargetInput, HistoryQuery, ListTargetsFilter, ListTargetsQuery } from "./target-validation";
+import type {
+  CreateTargetInput,
+  HistoryQuery,
+  ListTargetsFilter,
+  ListTargetsQuery,
+  UpdateBlockedAgentsInput,
+} from "./target-validation";
 
 function buildTargetWhere(user: AuthUser, filter: ListTargetsFilter): Prisma.TargetWhereInput {
   return {
@@ -151,5 +157,30 @@ export const targetService = {
       .toArray();
 
     return messages.reverse();
+  },
+
+  /// Só Supervisor/Gerente (CONTACTS_WRITE) chegam aqui. Bloqueia este
+  /// contato de falar com os agentes listados — quando o agente do canal
+  /// atual está na lista, o Inbound-Service responde com
+  /// Agent.blockedMessage em vez de rotear pra IA/atendente.
+  async updateBlockedAgents(user: AuthUser, id: string, input: UpdateBlockedAgentsInput) {
+    const organizationId = user.activeOrganizationId!;
+
+    const target = await prisma.target.findFirst({ where: { id, organizationId } });
+    if (!target) throw new NotFoundError("Contato não encontrado.");
+
+    if (input.blockedAgentIds.length > 0) {
+      const validCount = await prisma.agent.count({
+        where: { id: { in: input.blockedAgentIds }, organizationId },
+      });
+      if (validCount !== input.blockedAgentIds.length) {
+        throw new ValidationError("Um ou mais agentes selecionados são inválidos para esta empresa.");
+      }
+    }
+
+    return prisma.target.update({
+      where: { id: target.id },
+      data: { blockedAgentIds: input.blockedAgentIds },
+    });
   },
 };

@@ -7,6 +7,8 @@ export const AGENT_DEFAULT_MESSAGES = {
   processingMessage: "Estamos pensando na resposta, aguarde um instante.",
   transferMessage: "Vou te encaminhar para um de nossos atendentes. Aguarde só um instante.",
   unsupportedFormatMessage: "Desculpe, ainda não consigo processar esse tipo de mensagem. Pode me enviar em texto?",
+  blockedMessage:
+    "No momento não conseguimos continuar o atendimento por este canal. Se precisar de suporte, entre em contato por outro meio.",
   outOfHoursMessage: "No momento estamos fora do horário de atendimento humano. Retornaremos assim que possível.",
   closingMessage:
     "Obrigado pelo contato! Encerrando este atendimento por aqui. Se precisar de algo mais, é só chamar. 👋",
@@ -18,14 +20,15 @@ export const AGENT_DEFAULT_MESSAGES = {
 export const DEFAULT_AGENT_PERSONALITY =
   "Comunique-se de forma cordial, clara e objetiva, como um atendente profissional e prestativo.";
 
-/// Campos obrigatórios (sem switch de desativação) — o EscopoSaas é explícito:
-/// só estes três. Os outros quatro (welcome/outOfHours/closing/error) têm par
-/// mensagem+enabled, e quando enabled=false "a Inteligência Artificial pode
-/// gerar qualquer resposta" naquele cenário.
+/// Campos obrigatórios (sem switch de desativação). Os outros quatro
+/// (welcome/outOfHours/closing/error) têm par mensagem+enabled, e quando
+/// enabled=false "a Inteligência Artificial pode gerar qualquer resposta"
+/// naquele cenário.
 export const REQUIRED_AGENT_MESSAGE_FIELDS = [
   "processingMessage",
   "transferMessage",
   "unsupportedFormatMessage",
+  "blockedMessage",
 ] as const;
 
 export const TOGGLEABLE_AGENT_MESSAGE_FIELDS = [

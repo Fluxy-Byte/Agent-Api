@@ -5,6 +5,7 @@ import {
   historyQuerySchema,
   listTargetsFilterSchema,
   listTargetsQuerySchema,
+  updateBlockedAgentsSchema,
 } from "../../../application/target/target-validation";
 import { PermissionAction } from "../../../domain/enums/permission-action";
 import { ValidationError } from "../../../domain/errors/app-error";
@@ -66,5 +67,27 @@ targetsRouter.get(
     if (!parsed.success) throw new ValidationError("Filtros inválidos.", parsed.error.flatten());
 
     return targetService.getHistory(user, String(req.params.id), parsed.data);
+  }),
+);
+
+targetsRouter.patch(
+  "/:id/blocked-agents",
+  apiHandler({ action: PermissionAction.CONTACTS_WRITE }, async (req, _res, user) => {
+    const parsed = updateBlockedAgentsSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const targetId = String(req.params.id);
+    const before = await targetService.getById(user, targetId);
+    const target = await targetService.updateBlockedAgents(user, targetId, parsed.data);
+
+    await recordAudit(req, user, {
+      action: "TARGET_BLOCKED_AGENTS_UPDATED",
+      resourceType: "Target",
+      resourceId: target.id,
+      beforeState: { blockedAgentIds: before.blockedAgentIds },
+      afterState: { blockedAgentIds: target.blockedAgentIds },
+    });
+
+    return target;
   }),
 );
