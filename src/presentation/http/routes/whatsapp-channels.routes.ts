@@ -86,6 +86,13 @@ whatsappChannelsRouter.get(
   }),
 );
 
+whatsappChannelsRouter.get(
+  "/:id/campaigns-report",
+  apiHandler({ action: PermissionAction.WABAS_VIEW }, async (req, _res, user) => {
+    return whatsappChannelService.getCampaignReport(user, String(req.params.id));
+  }),
+);
+
 whatsappChannelsRouter.post(
   "/waba-lookup",
   apiHandler({ action: PermissionAction.WABAS_WRITE }, async (req) => {

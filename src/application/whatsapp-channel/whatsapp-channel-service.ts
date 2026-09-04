@@ -268,4 +268,39 @@ export const whatsappChannelService = {
       months: sent.map((count, index) => ({ month: index + 1, sent: count, received: received[index] })),
     };
   },
+
+  /// Relatório de campanhas (disparo ativo) deste canal — alimenta os modais
+  /// "Relatório de campanhas" e "Gastos" do dashboard. totalMessagesSent é a
+  /// volumetria total (soma de Campaign.totalSent de todas as campanhas,
+  /// qualquer categoria); byCategory quebra esse mesmo total por categoria de
+  /// template (Marketing/Utilidade/Autenticação) — a Meta cobra valores
+  /// diferentes por categoria, é a base pra estimar gasto.
+  async getCampaignReport(user: AuthUser, id: string) {
+    const channel = await this.getById(user, id);
+    const where = { whatsappChannelId: channel.id };
+
+    const [totalCampaigns, completedCampaigns, totals, byCategory] = await Promise.all([
+      prisma.campaign.count({ where }),
+      prisma.campaign.count({ where: { ...where, status: "COMPLETED" } }),
+      prisma.campaign.aggregate({ where, _sum: { totalSent: true } }),
+      prisma.campaign.groupBy({
+        by: ["category"],
+        where,
+        _count: { _all: true },
+        _sum: { totalSent: true },
+      }),
+    ]);
+
+    return {
+      totalCampaigns,
+      completedCampaigns,
+      processingCampaigns: totalCampaigns - completedCampaigns,
+      totalMessagesSent: totals._sum.totalSent ?? 0,
+      byCategory: byCategory.map((row) => ({
+        category: row.category,
+        campaignCount: row._count._all,
+        messagesSent: row._sum.totalSent ?? 0,
+      })),
+    };
+  },
 };
