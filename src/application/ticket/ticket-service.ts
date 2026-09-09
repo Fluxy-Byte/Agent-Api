@@ -15,9 +15,12 @@ const TICKET_INCLUDE = {
 } as const;
 
 export const ticketService = {
-  /// Ticket + conversa completa (Mongo, por messagingSessionId, sem limite —
-  /// é 1 ticket só) — usado pelo Dialog de detalhe do ticket na aba de
-  /// Histórico da Ilha de Atendimento (Agent Console).
+  /// Ticket + conversa completa — usado pelo Dialog de detalhe do ticket na
+  /// aba de Histórico da Ilha de Atendimento (Agent Console). A mensagem no
+  /// Mongo não guarda ticketId (só messagingSessionId, que pode ter mais de
+  /// um ticket ao longo do tempo — reabertura, etc.), então o recorte pro
+  /// ticket certo é pela janela [createdAt, closedAt ?? agora], mesma
+  /// aproximação já usada em resolveAttendantName (Agent-Console).
   async getById(user: AuthUser, id: string) {
     const ticket = await prisma.ticket.findFirst({
       where: { id, organizationId: user.activeOrganizationId! },
@@ -28,7 +31,10 @@ export const ticketService = {
     const db = await getMongoDb();
     const history = await db
       .collection<MessageDocument>(MESSAGES_COLLECTION)
-      .find({ messagingSessionId: ticket.messagingSessionId })
+      .find({
+        messagingSessionId: ticket.messagingSessionId,
+        createdAt: { $gte: ticket.createdAt, ...(ticket.closedAt ? { $lte: ticket.closedAt } : {}) },
+      })
       .sort({ createdAt: 1 })
       .toArray();
 
