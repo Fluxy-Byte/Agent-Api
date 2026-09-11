@@ -327,8 +327,29 @@ model WhatsappChannel {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  agentId        String
-  agent          Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  /// Nullable desde que openAgent existe: um canal pode não ter nenhum
+  /// agente de IA vinculado (atendimento 100% humano). Quando presente,
+  /// segue significando "o agente configurado para este canal" — só é
+  /// consultado pelo Inbound-Service quando openAgent=true.
+  agentId String?
+  agent   Agent?  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  /// Se true, o Inbound-Service manda as mensagens recebidas neste canal pro
+  /// agente de IA (agentId). Se false, ignora o agente (mesmo que exista) e
+  /// manda direto pro atendimento humano, abrindo ticket na fila
+  /// idServiceIslandDefault (ver webhook-service.ts). Default false; a UI de
+  /// criação do canal já liga automaticamente pra true quando um agente é
+  /// selecionado na hora de cadastrar o canal.
+  openAgent Boolean @default(false)
+
+  /// Apesar do nome, guarda o id de uma Queue (fila) — não de uma
+  /// ServiceIsland. É a fila que recebe o atendimento (abre ticket) quando
+  /// openAgent=false. Nome mantido assim por decisão de produto. Sempre
+  /// preenchida automaticamente na criação do canal com a fila "Default" da
+  /// ilha recém-criada (toda ilha nasce com uma).
+  idServiceIslandDefault String?
+  queueDefault           Queue?  @relation(fields: [idServiceIslandDefault], references: [id], onDelete: SetNull)
 
   phoneNumberId   String  @unique
   displayNumber   String
@@ -352,6 +373,7 @@ model WhatsappChannel {
   @@index([organizationId])
   @@index([agentId])
   @@index([wabaId])
+  @@index([idServiceIslandDefault])
 }
 
 // ---------- ILHA DE ATENDIMENTO ----------
@@ -421,10 +443,18 @@ model Queue {
   /// continuarem apontando pra ela). null = fila ativa normalmente.
   deletedAt DateTime?
 
+  /// Marca a fila "Default" criada automaticamente junto com a ilha de
+  /// atendimento (ver ServiceIsland/whatsapp-channel-service.ts) — nunca pode
+  /// ser excluída (nem soft nem hard delete; ver queue-service.ts). No máximo
+  /// uma por ilha, mas isso não é reforçado por constraint, só pela criação
+  /// controlada (a fila nunca nasce assim por fora do fluxo automático).
+  isDefault Boolean @default(false)
+
   members             QueueMember[]
   tickets             Ticket[]
   defaultForAgents    Agent[]
-  campaignsRoutedHere Campaign[]    @relation("CampaignRouteToQueue")
+  defaultForChannels  WhatsappChannel[]
+  campaignsRoutedHere Campaign[]        @relation("CampaignRouteToQueue")
 
   @@index([serviceIslandId])
 }
@@ -469,9 +499,9 @@ model Target {
   /// esse campo quando o contato ativou @username e não há troca de
   /// mensagem/telefone nos últimos 30 dias. Preenchido oportunisticamente
   /// (nunca apagado por uma mensagem futura que venha sem telefone).
-  waId  String?
-  name  String?
-  email String?
+  waId     String?
+  name     String?
+  email    String?
   /// Pares key:value livres, editáveis no Agent Console (leitura) e Desk Console
   /// (edição), via input de chave + input de valor.
   metadata Json?

@@ -3,6 +3,7 @@ import { whatsappChannelService } from "../../../application/whatsapp-channel/wh
 import {
   bulkCreateWhatsappChannelSchema,
   createWhatsappChannelSchema,
+  seriesRangeSchema,
   updateWhatsappChannelSchema,
   wabaLookupSchema,
 } from "../../../application/whatsapp-channel/whatsapp-channel-validation";
@@ -80,16 +81,22 @@ whatsappChannelsRouter.get(
 );
 
 whatsappChannelsRouter.get(
-  "/:id/conversations-by-month",
+  "/:id/conversations-series",
   apiHandler({ action: PermissionAction.WABAS_VIEW }, async (req, _res, user) => {
-    return whatsappChannelService.getMonthlyConversations(user, String(req.params.id));
+    const parsed = seriesRangeSchema.safeParse(req.query.range);
+    if (!parsed.success) throw new ValidationError("Range inválido.", parsed.error.flatten());
+
+    return whatsappChannelService.getConversationsSeries(user, String(req.params.id), parsed.data);
   }),
 );
 
 whatsappChannelsRouter.get(
-  "/:id/messages-by-month",
+  "/:id/messages-series",
   apiHandler({ action: PermissionAction.WABAS_VIEW }, async (req, _res, user) => {
-    return whatsappChannelService.getMonthlyMessageVolume(user, String(req.params.id));
+    const parsed = seriesRangeSchema.safeParse(req.query.range);
+    if (!parsed.success) throw new ValidationError("Range inválido.", parsed.error.flatten());
+
+    return whatsappChannelService.getMessagesSeries(user, String(req.params.id), parsed.data);
   }),
 );
 

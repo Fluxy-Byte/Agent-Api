@@ -166,6 +166,13 @@ export const queueService = {
   async delete(user: AuthUser, serviceIslandId: string, queueId: string) {
     const existing = await this.getById(user, serviceIslandId, queueId);
 
+    // Fila Default nasce junto com a ilha (ver whatsapp-channel-service.ts) e
+    // pode estar vinculada como idServiceIslandDefault de algum canal —
+    // nunca pode ser excluída, nem soft nem hard delete.
+    if (existing.isDefault) {
+      throw new ValidationError("A fila Default de uma ilha de atendimento não pode ser excluída.");
+    }
+
     const ticketCount = await prisma.ticket.count({ where: { queueId: existing.id } });
     if (ticketCount > 0) {
       await prisma.$transaction([

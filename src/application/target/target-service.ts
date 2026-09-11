@@ -75,7 +75,7 @@ export const targetService = {
         where: { id: topChannel[0].whatsappChannelId },
         include: { agent: { select: { name: true } } },
       });
-      primaryAgentName = channel?.agent.name ?? null;
+      primaryAgentName = channel?.agent?.name ?? null;
     }
 
     // Contagem de mensagens (não de Target) numa janela rolante de 24h — por

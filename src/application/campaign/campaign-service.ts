@@ -32,7 +32,11 @@ async function resolveWhatsappChannel(id: string, organizationId: string) {
   });
   if (!channel) throw new NotFoundError("WhatsApp Channel não encontrado.");
   if (!channel.serviceIsland) throw new NotFoundError("Ilha de atendimento do canal não encontrada.");
-  return channel;
+  // Campaign.agentId é obrigatório (snapshot do agente que disparou) — desde
+  // que agentId virou opcional em WhatsappChannel, um canal sem agente
+  // vinculado não pode disparar campanha.
+  if (!channel.agent) throw new ValidationError("Este canal não tem um agente de IA vinculado para disparar campanhas.");
+  return { ...channel, agent: channel.agent };
 }
 
 /// routeToQueueId precisa ser uma fila da ilha deste canal; routeToUserId
