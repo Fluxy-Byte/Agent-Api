@@ -3,7 +3,7 @@ import { whatsappChannelService } from "../../../application/whatsapp-channel/wh
 import {
   bulkCreateWhatsappChannelSchema,
   createWhatsappChannelSchema,
-  seriesRangeSchema,
+  seriesPeriodSchema,
   updateWhatsappChannelSchema,
   wabaLookupSchema,
 } from "../../../application/whatsapp-channel/whatsapp-channel-validation";
@@ -83,8 +83,8 @@ whatsappChannelsRouter.get(
 whatsappChannelsRouter.get(
   "/:id/conversations-series",
   apiHandler({ action: PermissionAction.WABAS_VIEW }, async (req, _res, user) => {
-    const parsed = seriesRangeSchema.safeParse(req.query.range);
-    if (!parsed.success) throw new ValidationError("Range inválido.", parsed.error.flatten());
+    const parsed = seriesPeriodSchema.safeParse(req.query.period);
+    if (!parsed.success) throw new ValidationError("Período inválido.", parsed.error.flatten());
 
     return whatsappChannelService.getConversationsSeries(user, String(req.params.id), parsed.data);
   }),
@@ -93,8 +93,8 @@ whatsappChannelsRouter.get(
 whatsappChannelsRouter.get(
   "/:id/messages-series",
   apiHandler({ action: PermissionAction.WABAS_VIEW }, async (req, _res, user) => {
-    const parsed = seriesRangeSchema.safeParse(req.query.range);
-    if (!parsed.success) throw new ValidationError("Range inválido.", parsed.error.flatten());
+    const parsed = seriesPeriodSchema.safeParse(req.query.period);
+    if (!parsed.success) throw new ValidationError("Período inválido.", parsed.error.flatten());
 
     return whatsappChannelService.getMessagesSeries(user, String(req.params.id), parsed.data);
   }),

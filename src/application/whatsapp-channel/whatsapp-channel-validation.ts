@@ -1,12 +1,32 @@
 import { z } from "zod";
 
-/// Ranges do filtro dos gráficos "Fluxo de conversas"/"Fluxo de mensagens"
-/// (Area Chart - Interactive) na tela de detalhe do canal. "years" usa
-/// granularidade mensal (últimos 24 meses); os demais, diária — ver
-/// resolveSeriesRange em whatsapp-channel-service.ts.
-export const SERIES_RANGES = ["years", "3m", "1m", "7d"] as const;
-export const seriesRangeSchema = z.enum(SERIES_RANGES).default("3m");
-export type SeriesRange = z.infer<typeof seriesRangeSchema>;
+/// Primeiro ano disponível no filtro dos gráficos "Fluxo de
+/// conversas"/"Fluxo de mensagens" — nunca existe dado de antes disso.
+export const MIN_SERIES_YEAR = 2024;
+
+/// Período dos gráficos na tela de detalhe do canal: um ano específico
+/// (granularidade mensal, Jan-Dez, a partir de MIN_SERIES_YEAR) ou
+/// "current-month" (granularidade diária, mês corrente — só o gráfico de
+/// mensagens oferece essa opção) — ver resolveSeriesWindow em
+/// whatsapp-channel-service.ts.
+export const seriesPeriodSchema = z
+  .string()
+  .default("current-month")
+  .transform((value, ctx) => {
+    if (value === "current-month") return "current-month" as const;
+
+    const currentYear = new Date().getUTCFullYear();
+    const year = Number(value);
+    if (!/^\d{4}$/.test(value) || year < MIN_SERIES_YEAR || year > currentYear) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Período inválido — use "current-month" ou um ano entre ${MIN_SERIES_YEAR} e ${currentYear}.`,
+      });
+      return z.NEVER;
+    }
+    return year;
+  });
+export type SeriesPeriod = z.infer<typeof seriesPeriodSchema>;
 
 export const createWhatsappChannelSchema = z.object({
   /// Não é mais obrigatório: um canal pode nascer sem agente de IA (só

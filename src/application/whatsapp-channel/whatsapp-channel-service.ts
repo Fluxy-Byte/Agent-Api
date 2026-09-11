@@ -12,33 +12,25 @@ import type { AuthUser } from "../../presentation/http/types/auth-user";
 import type {
   BulkCreateWhatsappChannelInput,
   CreateWhatsappChannelInput,
-  SeriesRange,
+  SeriesPeriod,
   UpdateWhatsappChannelInput,
 } from "./whatsapp-channel-validation";
 
-/// Alimenta os gráficos "Fluxo de conversas"/"Fluxo de mensagens" (Area Chart
-/// - Interactive do shadcn) na tela de detalhe do canal. Ranges curtos (7
-/// dias, 1 mês, 3 meses) vêm com granularidade diária; "years" (últimos 24
-/// meses) vem com granularidade mensal — não faria sentido plotar ~730 pontos
-/// diários num gráfico de 2 anos.
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function resolveSeriesRange(range: SeriesRange): { start: Date; end: Date; granularity: "day" | "month" } {
-  const now = new Date();
-  // Exclusivo, início do dia seguinte (UTC) — garante que o dia corrente
-  // inteiro entra no range, sem depender da hora exata da consulta.
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-
-  switch (range) {
-    case "7d":
-      return { start: new Date(end.getTime() - 7 * DAY_MS), end, granularity: "day" };
-    case "1m":
-      return { start: new Date(end.getTime() - 30 * DAY_MS), end, granularity: "day" };
-    case "3m":
-      return { start: new Date(end.getTime() - 90 * DAY_MS), end, granularity: "day" };
-    case "years":
-      return { start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 23, 1)), end, granularity: "month" };
+/// Alimenta os gráficos "Fluxo de conversas"/"Fluxo de mensagens" na tela de
+/// detalhe do canal. period é um ano específico (Jan-Dez inteiro,
+/// granularidade mensal) ou "current-month" (mês corrente inteiro,
+/// granularidade diária).
+function resolveSeriesWindow(period: SeriesPeriod): { start: Date; end: Date; granularity: "day" | "month" } {
+  if (period === "current-month") {
+    const now = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    return { start, end, granularity: "day" };
   }
+
+  const start = new Date(Date.UTC(period, 0, 1));
+  const end = new Date(Date.UTC(period + 1, 0, 1));
+  return { start, end, granularity: "month" };
 }
 
 function dayKey(date: Date): string {
@@ -319,13 +311,13 @@ export const whatsappChannelService = {
   },
 
   /// Quantidade de MessagingSession (nossa definição de "conversa" — uma
-  /// janela de atendimento aberta pelo cliente) na janela do range pedido,
-  /// pra alimentar o gráfico "Fluxo de conversas" (Area Chart - Interactive)
-  /// da tela de detalhe do canal. Sempre devolve todos os buckets do range,
-  /// com 0 nos que não tiveram conversa nenhuma.
-  async getConversationsSeries(user: AuthUser, id: string, range: SeriesRange) {
+  /// janela de atendimento aberta pelo cliente) no período pedido, pra
+  /// alimentar o gráfico "Fluxo de conversas" da tela de detalhe do canal.
+  /// Sempre devolve todos os buckets do período, com 0 nos que não tiveram
+  /// conversa nenhuma.
+  async getConversationsSeries(user: AuthUser, id: string, period: SeriesPeriod) {
     const channel = await this.getById(user, id);
-    const { start, end, granularity } = resolveSeriesRange(range);
+    const { start, end, granularity } = resolveSeriesWindow(period);
 
     const sessions = await prisma.messagingSession.findMany({
       where: { whatsappChannelId: channel.id, startedAt: { gte: start, lt: end } },
@@ -340,21 +332,21 @@ export const whatsappChannelService = {
     }
 
     return {
-      range,
+      period,
       granularity,
       points: buildBucketKeys(start, end, granularity).map((date) => ({ date, count: counts.get(date) ?? 0 })),
     };
   },
 
   /// Volumetria de MENSAGENS (não de conversas — uma conversa pode ter várias
-  /// mensagens) na janela do range pedido: quantas o canal recebeu (INBOUND,
-  /// do cliente) e quantas enviou (OUTBOUND, IA/atendente/sistema/campanha).
+  /// mensagens) no período pedido: quantas o canal recebeu (INBOUND, do
+  /// cliente) e quantas enviou (OUTBOUND, IA/atendente/sistema/campanha).
   /// Alimenta o gráfico "Fluxo de mensagens". Agregado no Mongo (coleção
   /// compartilhada `messages`) em vez de trazer documento por documento, já
   /// que o volume de mensagens tende a ser bem maior que o de sessões.
-  async getMessagesSeries(user: AuthUser, id: string, range: SeriesRange) {
+  async getMessagesSeries(user: AuthUser, id: string, period: SeriesPeriod) {
     const channel = await this.getById(user, id);
-    const { start, end, granularity } = resolveSeriesRange(range);
+    const { start, end, granularity } = resolveSeriesWindow(period);
     const dateFormat = granularity === "day" ? "%Y-%m-%d" : "%Y-%m";
 
     const db = await getMongoDb();
@@ -382,7 +374,7 @@ export const whatsappChannelService = {
     }
 
     return {
-      range,
+      period,
       granularity,
       points: buildBucketKeys(start, end, granularity).map((date) => ({
         date,
