@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
+import { preConfiguredMessageService } from "../../../application/pre-configured-message/pre-configured-message-service";
+import { upsertPreConfiguredMessageSchema } from "../../../application/pre-configured-message/pre-configured-message-validation";
 import { queueService } from "../../../application/queue/queue-service";
 import { createQueueSchema, upsertQueueSchema } from "../../../application/queue/queue-validation";
 import { serviceIslandService } from "../../../application/service-island/service-island-service";
@@ -13,6 +15,7 @@ import { recordAudit } from "../middlewares/audit";
 export const serviceIslandsRouter = Router();
 const queuesRouter = Router({ mergeParams: true });
 const tagsRouter = Router({ mergeParams: true });
+const preConfiguredMessagesRouter = Router({ mergeParams: true });
 
 const renameSchema = z.object({
   name: z.string().trim().min(1),
@@ -276,5 +279,76 @@ tagsRouter.delete(
   }),
 );
 
+preConfiguredMessagesRouter.get(
+  "/",
+  apiHandler({ action: PermissionAction.QUEUES_VIEW }, async (req, _res, user) => {
+    const parsed = paginationQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Parâmetros inválidos.", parsed.error.flatten());
+
+    return preConfiguredMessageService.list(user, String(req.params.id), parsed.data);
+  }),
+);
+
+preConfiguredMessagesRouter.post(
+  "/",
+  apiHandler({ action: PermissionAction.QUEUES_WRITE }, async (req, _res, user) => {
+    const parsed = upsertPreConfiguredMessageSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const message = await preConfiguredMessageService.create(user, String(req.params.id), parsed.data);
+    await recordAudit(req, user, {
+      action: "PRE_CONFIGURED_MESSAGE_CREATED",
+      resourceType: "PreConfiguredMessage",
+      resourceId: message.id,
+      afterState: message,
+    });
+
+    return message;
+  }),
+);
+
+preConfiguredMessagesRouter.put(
+  "/:messageId",
+  apiHandler({ action: PermissionAction.QUEUES_WRITE }, async (req, _res, user) => {
+    const parsed = upsertPreConfiguredMessageSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const serviceIslandId = String(req.params.id);
+    const messageId = String(req.params.messageId);
+    const before = await preConfiguredMessageService.getById(user, serviceIslandId, messageId);
+    const message = await preConfiguredMessageService.update(user, serviceIslandId, messageId, parsed.data);
+
+    await recordAudit(req, user, {
+      action: "PRE_CONFIGURED_MESSAGE_UPDATED",
+      resourceType: "PreConfiguredMessage",
+      resourceId: message.id,
+      beforeState: before,
+      afterState: message,
+    });
+
+    return message;
+  }),
+);
+
+preConfiguredMessagesRouter.delete(
+  "/:messageId",
+  apiHandler({ action: PermissionAction.QUEUES_WRITE }, async (req, _res, user) => {
+    const serviceIslandId = String(req.params.id);
+    const messageId = String(req.params.messageId);
+    const before = await preConfiguredMessageService.getById(user, serviceIslandId, messageId);
+    const message = await preConfiguredMessageService.remove(user, serviceIslandId, messageId);
+
+    await recordAudit(req, user, {
+      action: "PRE_CONFIGURED_MESSAGE_DELETED",
+      resourceType: "PreConfiguredMessage",
+      resourceId: message.id,
+      beforeState: before,
+    });
+
+    return message;
+  }),
+);
+
 serviceIslandsRouter.use("/:id/queues", queuesRouter);
 serviceIslandsRouter.use("/:id/tags", tagsRouter);
+serviceIslandsRouter.use("/:id/pre-configured-messages", preConfiguredMessagesRouter);

@@ -251,8 +251,8 @@ export const serviceIslandService = {
     return {
       queues,
       attendants,
-      waitingTickets: activeTickets.filter((t) => t.status === "WAITING"),
-      inProgressTickets: activeTickets.filter((t) => t.status === "IN_PROGRESS"),
+      waitingTickets: activeTickets.filter((t) => t.status === "WAITING").map(withDurations),
+      inProgressTickets: activeTickets.filter((t) => t.status === "IN_PROGRESS").map(withDurations),
     };
   },
 };

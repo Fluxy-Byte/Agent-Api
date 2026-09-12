@@ -397,8 +397,9 @@ model ServiceIsland {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  queues    Queue[]
-  closeTags TicketCloseTag[]
+  queues                Queue[]
+  closeTags             TicketCloseTag[]
+  preConfiguredMessages PreConfiguredMessage[]
 
   @@index([organizationId])
 }
@@ -415,6 +416,31 @@ model TicketCloseTag {
   updatedAt DateTime @updatedAt
 
   tickets Ticket[]
+
+  @@unique([serviceIslandId, name])
+  @@index([serviceIslandId])
+}
+
+/// Mensagem pronta cadastrada por ilha de atendimento e vinculada a uma ou
+/// mais filas — gerida no Agent Console, usada pelo atendente no Desk Console
+/// como atalho ao responder um ticket. content pode conter **negrito**,
+/// convertido pro *negrito* de verdade do WhatsApp só na hora de inserir no
+/// campo de mensagem do Desk (nunca persistido já convertido).
+model PreConfiguredMessage {
+  id              String        @id @default(cuid())
+  serviceIslandId String
+  serviceIsland   ServiceIsland @relation(fields: [serviceIslandId], references: [id], onDelete: Cascade)
+  name            String
+  content         String
+
+  /// Filas em que essa mensagem fica disponível pro atendente. "Selecionar
+  /// todas" no formulário é só conveniência de UI — marca as filas que
+  /// existem no momento da criação, não é uma flag que reaplica sozinha em
+  /// filas criadas depois.
+  queues Queue[] @relation("PreConfiguredMessageQueues")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([serviceIslandId, name])
   @@index([serviceIslandId])
@@ -450,11 +476,12 @@ model Queue {
   /// controlada (a fila nunca nasce assim por fora do fluxo automático).
   isDefault Boolean @default(false)
 
-  members             QueueMember[]
-  tickets             Ticket[]
-  defaultForAgents    Agent[]
-  defaultForChannels  WhatsappChannel[]
-  campaignsRoutedHere Campaign[]        @relation("CampaignRouteToQueue")
+  members               QueueMember[]
+  tickets               Ticket[]
+  defaultForAgents      Agent[]
+  defaultForChannels    WhatsappChannel[]
+  campaignsRoutedHere   Campaign[]             @relation("CampaignRouteToQueue")
+  preConfiguredMessages PreConfiguredMessage[] @relation("PreConfiguredMessageQueues")
 
   @@index([serviceIslandId])
 }

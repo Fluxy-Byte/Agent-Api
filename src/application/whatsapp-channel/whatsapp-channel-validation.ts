@@ -28,6 +28,14 @@ export const seriesPeriodSchema = z
   });
 export type SeriesPeriod = z.infer<typeof seriesPeriodSchema>;
 
+/// Filtro de período do card "Gastos" (endpoint /campaigns-report) — sem
+/// startDate/endDate, o relatório sai com o histórico completo do canal.
+export const campaignReportFilterSchema = z.object({
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+});
+export type CampaignReportFilter = z.infer<typeof campaignReportFilterSchema>;
+
 export const createWhatsappChannelSchema = z.object({
   /// Não é mais obrigatório: um canal pode nascer sem agente de IA (só
   /// atendimento humano). Quando informado, openAgent nasce true; quando

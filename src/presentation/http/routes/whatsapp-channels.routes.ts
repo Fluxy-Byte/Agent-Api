@@ -2,6 +2,7 @@ import { Router } from "express";
 import { whatsappChannelService } from "../../../application/whatsapp-channel/whatsapp-channel-service";
 import {
   bulkCreateWhatsappChannelSchema,
+  campaignReportFilterSchema,
   createWhatsappChannelSchema,
   seriesPeriodSchema,
   updateWhatsappChannelSchema,
@@ -103,7 +104,10 @@ whatsappChannelsRouter.get(
 whatsappChannelsRouter.get(
   "/:id/campaigns-report",
   apiHandler({ action: PermissionAction.WABAS_VIEW }, async (req, _res, user) => {
-    return whatsappChannelService.getCampaignReport(user, String(req.params.id));
+    const parsed = campaignReportFilterSchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Filtro de período inválido.", parsed.error.flatten());
+
+    return whatsappChannelService.getCampaignReport(user, String(req.params.id), parsed.data);
   }),
 );
 

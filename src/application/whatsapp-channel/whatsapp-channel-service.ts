@@ -11,6 +11,7 @@ import {
 import type { AuthUser } from "../../presentation/http/types/auth-user";
 import type {
   BulkCreateWhatsappChannelInput,
+  CampaignReportFilter,
   CreateWhatsappChannelInput,
   SeriesPeriod,
   UpdateWhatsappChannelInput,
@@ -384,22 +385,42 @@ export const whatsappChannelService = {
     };
   },
 
-  /// Alimenta o card "Gastos" do dashboard — quantidade de mensagens de
-  /// campanha (disparo ativo) enviadas por categoria de template
-  /// (Marketing/Utilidade/Autenticação). A Meta cobra valores diferentes por
-  /// categoria, é a base pra estimar gasto. A contagem total de campanhas
-  /// já existe (mais completa) na tela de Campanhas — não duplicar aqui.
-  async getCampaignReport(user: AuthUser, id: string) {
+  /// Alimenta o card "Gastos" do dashboard — volumetria total de mensagens
+  /// (enviadas + recebidas) e quantidade de mensagens de campanha (disparo
+  /// ativo) enviadas por categoria de template (Marketing/Utilidade/
+  /// Autenticação), dentro do período selecionado (startDate/endDate
+  /// opcionais — sem eles, sai o histórico completo do canal). A Meta cobra
+  /// valores diferentes por categoria, é a base pra estimar gasto. A
+  /// contagem total de campanhas já existe (mais completa) na tela de
+  /// Campanhas — não duplicar aqui.
+  async getCampaignReport(user: AuthUser, id: string, filter: CampaignReportFilter) {
     const channel = await this.getById(user, id);
+    const createdAtFilter =
+      filter.startDate || filter.endDate
+        ? {
+            createdAt: {
+              ...(filter.startDate ? { gte: filter.startDate } : {}),
+              ...(filter.endDate ? { lte: filter.endDate } : {}),
+            },
+          }
+        : {};
 
-    const byCategory = await prisma.campaign.groupBy({
-      by: ["category"],
-      where: { whatsappChannelId: channel.id },
-      _count: { _all: true },
-      _sum: { totalSent: true },
-    });
+    const db = await getMongoDb();
+    const [totalMessages, byCategory] = await Promise.all([
+      db.collection<MessageDocument>(MESSAGES_COLLECTION).countDocuments({
+        whatsappChannelId: channel.id,
+        ...createdAtFilter,
+      }),
+      prisma.campaign.groupBy({
+        by: ["category"],
+        where: { whatsappChannelId: channel.id, ...createdAtFilter },
+        _count: { _all: true },
+        _sum: { totalSent: true },
+      }),
+    ]);
 
     return {
+      totalMessages,
       byCategory: byCategory.map((row) => ({
         category: row.category,
         campaignCount: row._count._all,
