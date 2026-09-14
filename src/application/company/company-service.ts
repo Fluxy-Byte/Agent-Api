@@ -103,6 +103,36 @@ export const companyService = {
     });
   },
 
+  /// Remove o acesso do usuário a esta empresa (exclui o Member — pra voltar
+  /// precisa de um novo convite/código). Diferente de bloquear, não é
+  /// reversível com um clique.
+  async removeMember(user: AuthUser, organizationId: string, memberId: string) {
+    await this.getById(user, organizationId);
+
+    const member = await prisma.member.findFirst({ where: { id: memberId, organizationId } });
+    if (!member) throw new NotFoundError("Usuário não encontrado nesta empresa.");
+    if (member.userId === user.id) throw new ValidationError("Você não pode remover o seu próprio acesso.");
+
+    await prisma.member.delete({ where: { id: member.id } });
+    return member;
+  },
+
+  /// Bloqueia/desbloqueia o acesso do usuário a esta empresa especificamente —
+  /// reversível (ver Member.blocked no schema), ao contrário de removeMember.
+  async setMemberBlocked(user: AuthUser, organizationId: string, memberId: string, blocked: boolean) {
+    await this.getById(user, organizationId);
+
+    const member = await prisma.member.findFirst({ where: { id: memberId, organizationId } });
+    if (!member) throw new NotFoundError("Usuário não encontrado nesta empresa.");
+    if (member.userId === user.id) throw new ValidationError("Você não pode bloquear o seu próprio acesso.");
+
+    return prisma.member.update({
+      where: { id: member.id },
+      data: { blocked },
+      include: { user: { select: { id: true, name: true, email: true, image: true } } },
+    });
+  },
+
   /// Gera (ou rotaciona) o token de acesso à API externa (Fluxy Agents) desta
   /// empresa — o valor bruto só existe nesta resposta, nunca mais é devolvido
   /// em claro (ver sanitizeCompany em companies.routes.ts).

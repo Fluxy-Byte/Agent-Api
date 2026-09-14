@@ -153,6 +153,14 @@ model Member {
   status          AttendantStatus @default(OFFLINE)
   statusUpdatedAt DateTime?
 
+  /// Bloqueio temporário do acesso a ESTA empresa (não afeta outras empresas
+  /// do usuário nem é o ban global de plataforma do Better Auth) — reversível
+  /// por um Gerente/Administrador, ao contrário de excluir o Member (que exige
+  /// um novo convite pra voltar). Verificado na resolução da sessão (ver
+  /// session.ts#getAuthUser): membro bloqueado nunca ganha activeMemberRole,
+  /// então perde acesso a toda ação que exige PermissionAction nesta empresa.
+  blocked Boolean @default(false)
+
   @@unique([organizationId, userId])
   @@index([organizationId])
   @@index([userId])

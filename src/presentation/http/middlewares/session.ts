@@ -19,10 +19,14 @@ export async function getAuthUser(req: Request): Promise<AuthUser> {
   if (activeOrganizationId) {
     const member = await prisma.member.findUnique({
       where: { organizationId_userId: { organizationId: activeOrganizationId, userId: session.user.id } },
-      select: { role: true },
+      select: { role: true, blocked: true },
     });
 
-    if (member && isMemberRole(member.role)) {
+    // Membro bloqueado nunca ganha um papel ativo — mesmo efeito de não ter
+    // Member nenhum na empresa, PermissionAction nenhuma passa (ver
+    // authorization-service.can), sem precisar mexer em toda checagem manual
+    // de papel espalhada pelas rotas.
+    if (member && !member.blocked && isMemberRole(member.role)) {
       activeMemberRole = member.role;
     }
   }

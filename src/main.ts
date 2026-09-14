@@ -11,6 +11,7 @@ import { agentsRouter } from "./presentation/http/routes/agents.routes";
 import { campaignsRouter } from "./presentation/http/routes/campaigns.routes";
 import { companiesRouter } from "./presentation/http/routes/companies.routes";
 import { internalRouter } from "./presentation/http/routes/internal.routes";
+import { reportsRouter } from "./presentation/http/routes/reports.routes";
 import { serviceIslandsRouter } from "./presentation/http/routes/service-islands.routes";
 import { sessionRouter } from "./presentation/http/routes/session.routes";
 import { targetsRouter } from "./presentation/http/routes/targets.routes";
@@ -44,6 +45,7 @@ async function main() {
   app.use("/api/targets", targetsRouter);
   app.use("/api/tickets", ticketsRouter);
   app.use("/api/campaigns", campaignsRouter);
+  app.use("/api/reports", reportsRouter);
   app.use("/internal", internalRouter);
 
   app.get("/health", async (_req, res) => {

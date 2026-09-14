@@ -11,6 +11,7 @@ const createCompanySchema = z.object({
 });
 
 const updateMemberRoleSchema = z.object({ role: z.string().min(1) });
+const updateMemberBlockedSchema = z.object({ blocked: z.boolean() });
 const generateInviteCodeSchema = z.object({ role: z.string().min(1), email: z.string().email() });
 const redeemInviteCodeSchema = z.object({ code: z.string().min(1) });
 
@@ -84,7 +85,7 @@ companiesRouter.put(
       const requesterMembership = await companyService
         .listMembers(user, organizationId)
         .then((members) => members.find((m) => m.userId === user.id));
-      if (requesterMembership?.role !== "GERENTE") {
+      if (requesterMembership?.role !== "GERENTE" || requesterMembership.blocked) {
         throw new ForbiddenError("Apenas Gerente ou Administrador podem alterar o tipo de acesso.");
       }
     }
@@ -108,6 +109,76 @@ companiesRouter.put(
   }),
 );
 
+/// Bloqueia/desbloqueia o acesso do usuário a esta empresa — reversível, ao
+/// contrário do DELETE abaixo. Mesma checagem manual de papel das outras
+/// rotas sensíveis desta empresa-alvo.
+companiesRouter.patch(
+  "/:id/members/:memberId/blocked",
+  apiHandler({ requireCompany: false }, async (req, _res, user) => {
+    const parsed = updateMemberBlockedSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const organizationId = String(req.params.id);
+
+    if (!user.isPlatformAdmin) {
+      const requesterMembership = await companyService
+        .listMembers(user, organizationId)
+        .then((members) => members.find((m) => m.userId === user.id));
+      if (requesterMembership?.role !== "GERENTE" || requesterMembership.blocked) {
+        throw new ForbiddenError("Apenas Gerente ou Administrador podem bloquear/desbloquear acesso.");
+      }
+    }
+
+    const memberId = String(req.params.memberId);
+    const before = await companyService
+      .listMembers(user, organizationId)
+      .then((members) => members.find((m) => m.id === memberId));
+
+    const updated = await companyService.setMemberBlocked(user, organizationId, memberId, parsed.data.blocked);
+
+    await recordAudit(req, user, {
+      action: parsed.data.blocked ? "MEMBER_BLOCKED" : "MEMBER_UNBLOCKED",
+      resourceType: "Member",
+      resourceId: memberId,
+      beforeState: before,
+      afterState: updated,
+    });
+
+    return updated;
+  }),
+);
+
+/// Remove o acesso do usuário a esta empresa (exclui o Member — não é
+/// reversível com um clique, precisa de um novo convite). Mesma checagem
+/// manual de papel das outras rotas sensíveis desta empresa-alvo.
+companiesRouter.delete(
+  "/:id/members/:memberId",
+  apiHandler({ requireCompany: false }, async (req, _res, user) => {
+    const organizationId = String(req.params.id);
+
+    if (!user.isPlatformAdmin) {
+      const requesterMembership = await companyService
+        .listMembers(user, organizationId)
+        .then((members) => members.find((m) => m.userId === user.id));
+      if (requesterMembership?.role !== "GERENTE" || requesterMembership.blocked) {
+        throw new ForbiddenError("Apenas Gerente ou Administrador podem remover acesso.");
+      }
+    }
+
+    const memberId = String(req.params.memberId);
+    const removed = await companyService.removeMember(user, organizationId, memberId);
+
+    await recordAudit(req, user, {
+      action: "MEMBER_REMOVED",
+      resourceType: "Member",
+      resourceId: memberId,
+      beforeState: removed,
+    });
+
+    return { success: true };
+  }),
+);
+
 /// Gera (ou rotaciona) o token de acesso à API externa (Fluxy Agents) — mesma
 /// checagem manual de papel (GERENTE/admin) da rota de troca de acesso acima,
 /// já que é uma ação sensível de segurança, não só de escrita comum.
@@ -120,7 +191,7 @@ companiesRouter.post(
       const requesterMembership = await companyService
         .listMembers(user, organizationId)
         .then((members) => members.find((m) => m.userId === user.id));
-      if (requesterMembership?.role !== "GERENTE") {
+      if (requesterMembership?.role !== "GERENTE" || requesterMembership.blocked) {
         throw new ForbiddenError("Apenas Gerente ou Administrador podem gerar o token de acesso à API.");
       }
     }
@@ -150,7 +221,7 @@ companiesRouter.get(
       const requesterMembership = await companyService
         .listMembers(user, organizationId)
         .then((members) => members.find((m) => m.userId === user.id));
-      if (requesterMembership?.role !== "GERENTE") {
+      if (requesterMembership?.role !== "GERENTE" || requesterMembership.blocked) {
         throw new ForbiddenError("Apenas Gerente ou Administrador podem ver os códigos de convite.");
       }
     }
@@ -173,7 +244,7 @@ companiesRouter.post(
       const requesterMembership = await companyService
         .listMembers(user, organizationId)
         .then((members) => members.find((m) => m.userId === user.id));
-      if (requesterMembership?.role !== "GERENTE") {
+      if (requesterMembership?.role !== "GERENTE" || requesterMembership.blocked) {
         throw new ForbiddenError("Apenas Gerente ou Administrador podem gerar código de convite.");
       }
     }

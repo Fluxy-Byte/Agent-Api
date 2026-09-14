@@ -55,9 +55,9 @@ export const targetService = {
   async getStats(user: AuthUser, filter: ListTargetsFilter) {
     const where = buildTargetWhere(user, filter);
 
-    const [total, active, lastInteraction, topChannel, matchingTargets] = await Promise.all([
+    const [total, blocked, lastInteraction, topChannel, matchingTargets] = await Promise.all([
       prisma.target.count({ where }),
-      prisma.target.count({ where: { ...where, status: { not: "FINISHED" } } }),
+      prisma.target.count({ where: { ...where, blockedAgentIds: { isEmpty: false } } }),
       prisma.target.findFirst({ where, orderBy: { lastInteractionAt: "desc" }, select: { lastInteractionAt: true } }),
       prisma.target.groupBy({
         by: ["whatsappChannelId"],
@@ -104,7 +104,7 @@ export const targetService = {
 
     return {
       total,
-      active,
+      blocked,
       interactionsToday,
       contactsInteractedToday,
       lastInteractionAt: lastInteraction?.lastInteractionAt ?? null,
