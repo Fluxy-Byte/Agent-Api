@@ -209,8 +209,10 @@ export const reportService = {
     }));
   },
 
-  /// Total de campanhas, quantos disparos de fato chegaram no contato, e
-  /// qual fração desses disparos teve resposta do cliente depois.
+  /// Total de campanhas, quantos disparos de fato chegaram no contato, o
+  /// total de contatos que passaram por alguma campanha (sucesso ou falha de
+  /// envio), e qual fração dos disparos alcançados teve resposta do cliente
+  /// depois.
   /// "Resposta" = mensagem do cliente (senderType CUSTOMER) depois do horário
   /// do disparo e antes do PRÓXIMO disparo pro mesmo contato (se houver) —
   /// assim uma resposta é atribuída ao disparo que efetivamente a motivou,
@@ -218,17 +220,35 @@ export const reportService = {
   async getCampaignMetrics(user: AuthUser) {
     const organizationId = user.activeOrganizationId!;
 
-    const [totalCampaigns, dispatches] = await Promise.all([
+    const [totalCampaigns, aggregates, dispatches] = await Promise.all([
       prisma.campaign.count({ where: { organizationId } }),
+      // totalContacts = totalSent + totalFailures (todo contato já processado
+      // por alguma campanha, independente do resultado do envio).
+      prisma.campaign.aggregate({ where: { organizationId }, _sum: { totalContacts: true, totalFailures: true } }),
       prisma.campaignTarget.findMany({
         where: { campaign: { organizationId }, status: { in: [...REACHED_STATUSES] } },
         select: { targetId: true, createdAt: true },
       }),
     ]);
 
+    const totalContacts = aggregates._sum.totalContacts ?? 0;
+    const totalFailures = aggregates._sum.totalFailures ?? 0;
     const reachedContacts = dispatches.length;
+    // Saldo de envio: alcançados - total de contatos processados. Sempre <= 0
+    // (nunca alcançamos mais do que processamos) — quanto mais perto de 0,
+    // melhor a entrega; bem negativo indica muita falha de envio.
+    const reachDelta = reachedContacts - totalContacts;
+
     if (reachedContacts === 0) {
-      return { totalCampaigns, reachedContacts, respondedDispatches: 0, responseRate: null as number | null };
+      return {
+        totalCampaigns,
+        reachedContacts,
+        totalContacts,
+        totalFailures,
+        reachDelta,
+        respondedDispatches: 0,
+        responseRate: null as number | null,
+      };
     }
 
     const dispatchesByTarget = new Map<string, number[]>();
@@ -269,6 +289,9 @@ export const reportService = {
     return {
       totalCampaigns,
       reachedContacts,
+      totalContacts,
+      totalFailures,
+      reachDelta,
       respondedDispatches,
       responseRate: (respondedDispatches / reachedContacts) * 100,
     };
