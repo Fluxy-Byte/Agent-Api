@@ -220,20 +220,23 @@ export const reportService = {
   async getCampaignMetrics(user: AuthUser) {
     const organizationId = user.activeOrganizationId!;
 
-    const [totalCampaigns, aggregates, dispatches] = await Promise.all([
+    // totalContacts/totalFailures vêm da MESMA query ao vivo do CampaignTarget
+    // que gera reachedContacts (em vez dos contadores acumulados em Campaign),
+    // pra nunca destoar entre si — os contadores da Campaign só sobem e nunca
+    // são ajustados quando um Target é apagado (o CampaignTarget dele some
+    // em cascata, mas o contador da campanha fica com o valor antigo).
+    const [totalCampaigns, allDispatches] = await Promise.all([
       prisma.campaign.count({ where: { organizationId } }),
-      // totalContacts = totalSent + totalFailures (todo contato já processado
-      // por alguma campanha, independente do resultado do envio).
-      prisma.campaign.aggregate({ where: { organizationId }, _sum: { totalContacts: true, totalFailures: true } }),
       prisma.campaignTarget.findMany({
-        where: { campaign: { organizationId }, status: { in: [...REACHED_STATUSES] } },
-        select: { targetId: true, createdAt: true },
+        where: { campaign: { organizationId } },
+        select: { targetId: true, createdAt: true, status: true },
       }),
     ]);
 
-    const totalContacts = aggregates._sum.totalContacts ?? 0;
-    const totalFailures = aggregates._sum.totalFailures ?? 0;
+    const totalContacts = allDispatches.length;
+    const dispatches = allDispatches.filter((d) => (REACHED_STATUSES as readonly string[]).includes(d.status));
     const reachedContacts = dispatches.length;
+    const totalFailures = totalContacts - reachedContacts;
     // Saldo de envio: alcançados - total de contatos processados. Sempre <= 0
     // (nunca alcançamos mais do que processamos) — quanto mais perto de 0,
     // melhor a entrega; bem negativo indica muita falha de envio.
