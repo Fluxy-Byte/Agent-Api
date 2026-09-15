@@ -48,7 +48,7 @@ const envSchema = z.object({
 
   /// Versão da Graph API da Meta usada para consultas (lookup de números,
   /// templates) — o token de acesso agora é por WABA, salvo em
-  /// WhatsappChannel.metaAccessToken.
+  /// Channel.metaAccessToken.
   META_GRAPH_API_VERSION: z.string().default("v21.0"),
 
   /// Base URL do Campaign-Worker (POST /campaign/send) — autenticado com o

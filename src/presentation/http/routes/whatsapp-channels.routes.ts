@@ -58,7 +58,7 @@ whatsappChannelsRouter.post(
     const safeChannel = sanitizeChannel(channel);
     await recordAudit(req, user, {
       action: "WHATSAPP_CHANNEL_CREATED",
-      resourceType: "WhatsappChannel",
+      resourceType: "Channel",
       resourceId: channel.id,
       afterState: safeChannel,
     });
@@ -133,7 +133,7 @@ whatsappChannelsRouter.post(
     for (const channel of safeCreated) {
       await recordAudit(req, user, {
         action: "WHATSAPP_CHANNEL_CREATED",
-        resourceType: "WhatsappChannel",
+        resourceType: "Channel",
         resourceId: channel.id,
         afterState: channel,
       });
@@ -156,7 +156,7 @@ whatsappChannelsRouter.put(
 
     await recordAudit(req, user, {
       action: "WHATSAPP_CHANNEL_UPDATED",
-      resourceType: "WhatsappChannel",
+      resourceType: "Channel",
       resourceId: channel.id,
       beforeState: sanitizeChannel(before),
       afterState: safeChannel,

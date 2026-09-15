@@ -49,12 +49,19 @@ export const createWhatsappChannelSchema = z.object({
 
 export const updateWhatsappChannelSchema = createWhatsappChannelSchema.partial().extend({
   /// Liga/desliga o roteamento pro agente de IA deste canal especificamente
-  /// (ver WhatsappChannel.openAgent no schema). Não pode virar true sem um
+  /// (ver Channel.openAgent no schema). Não pode virar true sem um
   /// agentId (existente ou enviado na mesma requisição) — validado no service.
   openAgent: z.boolean().optional(),
   /// Id da fila (Queue) que recebe o atendimento quando openAgent=false.
   /// null explícito limpa a seleção; omitido não mexe no valor salvo.
   idServiceIslandDefault: z.string().trim().min(1, "Fila inválida.").nullish(),
+  /// Palavras/frases-chave de reset de jornada (ver Channel.wordsToReset
+  /// no schema). Enviado sempre como lista completa — substitui a anterior.
+  wordsToReset: z.array(z.string().trim().min(1)).optional(),
+  /// Mensagem enviada ao contato depois do reset de jornada. "" (string vazia)
+  /// limpa e volta a usar a mensagem padrão do Piloto; omitido não mexe no
+  /// valor salvo.
+  resetMessage: z.string().trim().nullish(),
 });
 
 export const wabaLookupSchema = z.object({

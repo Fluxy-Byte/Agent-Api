@@ -135,7 +135,7 @@ export const reportService = {
     const previousPeriodStart = new Date(now.getTime() - 2 * THIRTY_DAYS_MS);
 
     const [channels, currentCounts, previousCounts] = await Promise.all([
-      prisma.whatsappChannel.findMany({
+      prisma.channel.findMany({
         where: { organizationId },
         select: { id: true, displayNumber: true, agent: { select: { name: true } } },
       }),

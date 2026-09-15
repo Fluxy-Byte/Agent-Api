@@ -92,6 +92,24 @@ internalRouter.patch("/targets/:id/metadata", async (req, res) => {
   res.json({ success: true, result: updated, message: null });
 });
 
+/// Usada pelo AI-Worker (reset de jornada por palavra-chave) para limpar
+/// TODOS os metadados salvos do contato — diferente do PATCH acima, que faz
+/// merge, este substitui por {} (ver Channel.wordsToReset).
+internalRouter.delete("/targets/:id/metadata", async (req, res) => {
+  const target = await prisma.target.findUnique({ where: { id: String(req.params.id) } });
+  if (!target) {
+    res.status(404).json({ success: false, result: null, message: "Contato não encontrado." });
+    return;
+  }
+
+  const updated = await prisma.target.update({
+    where: { id: target.id },
+    data: { metadata: {} },
+  });
+
+  res.json({ success: true, result: updated, message: null });
+});
+
 /// Chamada pela Metrópole (server-to-server) sempre que um lead novo se
 /// cadastra com WhatsApp pelo formulário de contato do site — dispara a
 /// campanha ativa de boas-vindas (template configurado via env) pro contato.
@@ -170,6 +188,23 @@ internalRouter.post("/campaigns/dispatch", async (req, res) => {
     const message = error instanceof Error ? error.message : "Falha ao disparar a campanha.";
     res.status(statusCode).json({ success: false, result: null, message });
   }
+});
+
+/// Usada pelo AI-Worker (tool de "não quero mais receber") quando o contato
+/// pede pra parar de receber campanhas — marca Target.blockCampaigns.
+internalRouter.patch("/targets/:id/block-campaigns", async (req, res) => {
+  const target = await prisma.target.findUnique({ where: { id: String(req.params.id) } });
+  if (!target) {
+    res.status(404).json({ success: false, result: null, message: "Contato não encontrado." });
+    return;
+  }
+
+  const updated = await prisma.target.update({
+    where: { id: target.id },
+    data: { blockCampaigns: true },
+  });
+
+  res.json({ success: true, result: updated, message: null });
 });
 
 /// Chamada pelo worker Python (AI-Worker/max) ao terminar de processar (ou

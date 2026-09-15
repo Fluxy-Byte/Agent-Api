@@ -25,15 +25,15 @@ function buildCampaignWhere(user: AuthUser, filter: ListCampaignsFilter): Prisma
   };
 }
 
-async function resolveWhatsappChannel(id: string, organizationId: string) {
-  const channel = await prisma.whatsappChannel.findFirst({
+async function resolveChannel(id: string, organizationId: string) {
+  const channel = await prisma.channel.findFirst({
     where: { id, organizationId },
     include: { agent: true, serviceIsland: true },
   });
   if (!channel) throw new NotFoundError("WhatsApp Channel não encontrado.");
   if (!channel.serviceIsland) throw new NotFoundError("Ilha de atendimento do canal não encontrada.");
   // Campaign.agentId é obrigatório (snapshot do agente que disparou) — desde
-  // que agentId virou opcional em WhatsappChannel, um canal sem agente
+  // que agentId virou opcional em Channel, um canal sem agente
   // vinculado não pode disparar campanha.
   if (!channel.agent) throw new ValidationError("Este canal não tem um agente de IA vinculado para disparar campanhas.");
   return { ...channel, agent: channel.agent };
@@ -112,7 +112,7 @@ export const campaignService = {
   /// enfileira o envio em massa. Se a chamada ao worker falhar, a campanha fica
   /// órfã em PROCESSING — mesmo comportamento de falha do app antigo.
   async dispatch(params: DispatchInput) {
-    const channel = await resolveWhatsappChannel(params.whatsappChannelId, params.organizationId);
+    const channel = await resolveChannel(params.whatsappChannelId, params.organizationId);
 
     const semTelefone = params.contacts.some((c) => !c.phone);
     if (semTelefone) throw new ValidationError("Todo contato precisa ter telefone preenchido.");
@@ -203,7 +203,7 @@ export const campaignService = {
     category: string;
     createdByName?: string;
   }) {
-    const channel = await prisma.whatsappChannel.findUnique({ where: { id: input.whatsappChannelId } });
+    const channel = await prisma.channel.findUnique({ where: { id: input.whatsappChannelId } });
     if (!channel) throw new NotFoundError("WhatsApp Channel configurado para a Metrópole não encontrado.");
 
     return this.dispatch({

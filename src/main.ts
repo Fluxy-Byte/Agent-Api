@@ -40,7 +40,7 @@ async function main() {
   app.use("/api/companies", companiesRouter);
   app.use("/api/session", sessionRouter);
   app.use("/api/agents", agentsRouter);
-  app.use("/api/wc", whatsappChannelsRouter);
+  app.use("/api/channels", whatsappChannelsRouter);
   app.use("/api/service-islands", serviceIslandsRouter);
   app.use("/api/targets", targetsRouter);
   app.use("/api/tickets", ticketsRouter);

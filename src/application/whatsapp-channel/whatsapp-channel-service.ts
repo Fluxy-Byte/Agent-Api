@@ -80,7 +80,7 @@ async function assertQueueBelongsToChannelIsland(queueId: string, whatsappChanne
   if (!queue) throw new ValidationError("Fila inválida para a ilha de atendimento deste canal.");
 }
 
-/// Cria o WhatsappChannel + sua ilha de atendimento (1:1) + a fila "Default"
+/// Cria o Channel + sua ilha de atendimento (1:1) + a fila "Default"
 /// da ilha, sempre na mesma transação — toda ilha nasce com essa fila (nunca
 /// pode ser excluída, ver queue-service.ts). Como a ilha acabou de nascer, a
 /// Default é a ÚNICA fila dela: já fica marcada de cara como a fila de
@@ -98,7 +98,7 @@ async function createChannelWithIsland(
     metaAccessToken: string;
   },
 ) {
-  const channel = await tx.whatsappChannel.create({
+  const channel = await tx.channel.create({
     data: {
       organizationId: data.organizationId,
       agentId: data.agentId,
@@ -122,7 +122,7 @@ async function createChannelWithIsland(
     data: { serviceIslandId: serviceIsland.id, name: "Default", isDefault: true },
   });
 
-  const updatedChannel = await tx.whatsappChannel.update({
+  const updatedChannel = await tx.channel.update({
     where: { id: channel.id },
     data: { idServiceIslandDefault: defaultQueue.id },
   });
@@ -132,7 +132,7 @@ async function createChannelWithIsland(
 
 export const whatsappChannelService = {
   async list(user: AuthUser) {
-    return prisma.whatsappChannel.findMany({
+    return prisma.channel.findMany({
       where: { organizationId: user.activeOrganizationId! },
       include: { serviceIsland: true },
       orderBy: { createdAt: "desc" },
@@ -140,7 +140,7 @@ export const whatsappChannelService = {
   },
 
   async getById(user: AuthUser, id: string) {
-    const channel = await prisma.whatsappChannel.findFirst({
+    const channel = await prisma.channel.findFirst({
       where: { id, organizationId: user.activeOrganizationId! },
       include: { serviceIsland: true },
     });
@@ -156,7 +156,7 @@ export const whatsappChannelService = {
       await assertAgentBelongsToOrganization(input.agentId, user.activeOrganizationId!);
     }
 
-    const existing = await prisma.whatsappChannel.findFirst({
+    const existing = await prisma.channel.findFirst({
       where: { phoneNumberId: input.phoneNumberId },
       select: { id: true },
     });
@@ -185,7 +185,7 @@ export const whatsappChannelService = {
     }
 
     if (input.phoneNumberId) {
-      const conflict = await prisma.whatsappChannel.findFirst({
+      const conflict = await prisma.channel.findFirst({
         where: { id: { not: existing.id }, phoneNumberId: input.phoneNumberId },
         select: { id: true },
       });
@@ -202,7 +202,7 @@ export const whatsappChannelService = {
       await assertQueueBelongsToChannelIsland(input.idServiceIslandDefault, existing.id);
     }
 
-    return prisma.whatsappChannel.update({
+    return prisma.channel.update({
       where: { id: existing.id },
       data: {
         agentId: nextAgentId,
@@ -215,6 +215,11 @@ export const whatsappChannelService = {
         // Campo em branco = não mexe no token salvo (não existe forma de
         // "limpar" o token por essa rota — só sobrescrever com um novo).
         metaAccessToken: input.metaAccessToken ?? existing.metaAccessToken,
+        wordsToReset: input.wordsToReset ?? existing.wordsToReset,
+        // "" (string vazia) ou null limpam e voltam pro padrão do Piloto;
+        // omitido (undefined) não mexe no valor salvo.
+        resetMessage:
+          input.resetMessage === undefined ? existing.resetMessage : input.resetMessage || null,
       },
       include: { serviceIsland: true },
     });
@@ -226,7 +231,7 @@ export const whatsappChannelService = {
   async lookupWaba(wabaId: string, accessToken: string) {
     const numbers = await listWabaPhoneNumbers(wabaId, accessToken);
 
-    const existing = await prisma.whatsappChannel.findMany({
+    const existing = await prisma.channel.findMany({
       where: { phoneNumberId: { in: numbers.map((n) => n.id) } },
       select: { phoneNumberId: true },
     });
@@ -248,7 +253,7 @@ export const whatsappChannelService = {
       await assertAgentBelongsToOrganization(input.agentId, user.activeOrganizationId!);
     }
 
-    const existing = await prisma.whatsappChannel.findMany({
+    const existing = await prisma.channel.findMany({
       where: { phoneNumberId: { in: input.phoneNumbers.map((p) => p.phoneNumberId) } },
       select: { phoneNumberId: true },
     });

@@ -71,7 +71,7 @@ export const targetService = {
 
     let primaryAgentName: string | null = null;
     if (topChannel.length > 0) {
-      const channel = await prisma.whatsappChannel.findUnique({
+      const channel = await prisma.channel.findUnique({
         where: { id: topChannel[0].whatsappChannelId },
         include: { agent: { select: { name: true } } },
       });
@@ -115,7 +115,7 @@ export const targetService = {
   /// Cadastro manual de contato (fora do fluxo normal, que é via webhook
   /// inbound ou disparo de campanha) — usado pelo botão "Novo contato".
   async create(user: AuthUser, input: CreateTargetInput) {
-    const channel = await prisma.whatsappChannel.findFirst({
+    const channel = await prisma.channel.findFirst({
       where: { id: input.whatsappChannelId, organizationId: user.activeOrganizationId! },
     });
     if (!channel) throw new NotFoundError("WhatsApp Channel não encontrado.");
