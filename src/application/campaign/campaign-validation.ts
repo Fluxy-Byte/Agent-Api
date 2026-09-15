@@ -30,6 +30,11 @@ export const createCampaignSchema = z.object({
   routeToUserId: z.string().trim().min(1).optional(),
 });
 
+export const checkBlockedContactsSchema = z.object({
+  whatsappChannelId: z.string().trim().min(1, "Selecione uma rede social."),
+  phones: z.array(z.string().trim().min(1)).min(1, "Informe ao menos um telefone."),
+});
+
 export const listCampaignsFilterSchema = z.object({
   agentId: z.string().trim().optional(),
   whatsappChannelId: z.string().trim().optional(),
@@ -46,6 +51,7 @@ export const listCampaignsQuerySchema = listCampaignsFilterSchema.extend({
   sortDir: z.enum(["asc", "desc"]).default("desc"),
 });
 
+export type CheckBlockedContactsInput = z.infer<typeof checkBlockedContactsSchema>;
 export type CreateCampaignInput = z.infer<typeof createCampaignSchema>;
 export type ListCampaignsFilter = z.infer<typeof listCampaignsFilterSchema>;
 export type ListCampaignsQuery = z.infer<typeof listCampaignsQuerySchema>;

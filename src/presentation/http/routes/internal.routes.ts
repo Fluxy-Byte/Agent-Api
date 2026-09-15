@@ -50,6 +50,16 @@ const campaignDispatchSchema = z.object({
   contacts: z.array(dispatchContactSchema).min(1, "Envie ao menos 1 contato."),
 });
 
+const messageLogEntrySchema = z.object({
+  messageId: z.string().trim().min(1),
+  messageLog: z.string().trim().min(1),
+  stagio: z.enum(["start", "end"]),
+});
+
+const messageLogBatchSchema = z.object({
+  logs: z.array(messageLogEntrySchema).min(1),
+});
+
 const ragDocumentStatusSchema = z.object({
   status: z.enum(["READY", "FAILED"]),
   chunkCount: z.number().int().optional(),
@@ -205,6 +215,22 @@ internalRouter.patch("/targets/:id/block-campaigns", async (req, res) => {
   });
 
   res.json({ success: true, result: updated, message: null });
+});
+
+/// Usada pelo AI-Worker (Python, sem acesso direto ao Postgres) pra gravar
+/// suas linhas de MessageLog — os demais serviços da mensageria (TypeScript)
+/// escrevem direto via Prisma, sem passar por HTTP. Aceita lote pra cobrir o
+/// caso de mensagens agrupadas na janela de debounce (uma linha por
+/// mensagem, mesmo stagio). Ver MENSAGERIA.md.
+internalRouter.post("/message-logs", async (req, res) => {
+  const parsed = messageLogBatchSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(422).json({ success: false, result: null, message: "Dados inválidos." });
+    return;
+  }
+
+  await prisma.messageLog.createMany({ data: parsed.data.logs });
+  res.status(202).json({ success: true, result: null, message: null });
 });
 
 /// Chamada pelo worker Python (AI-Worker/max) ao terminar de processar (ou

@@ -220,6 +220,8 @@ export const whatsappChannelService = {
         // omitido (undefined) não mexe no valor salvo.
         resetMessage:
           input.resetMessage === undefined ? existing.resetMessage : input.resetMessage || null,
+        wordsToBlockCampaign: input.wordsToBlockCampaign ?? existing.wordsToBlockCampaign,
+        useWordsToBlockCampaign: input.useWordsToBlockCampaign ?? existing.useWordsToBlockCampaign,
       },
       include: { serviceIsland: true },
     });

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { campaignService } from "../../../application/campaign/campaign-service";
 import {
+  checkBlockedContactsSchema,
   createCampaignSchema,
   listCampaignsFilterSchema,
   listCampaignsQuerySchema,
@@ -44,6 +45,17 @@ campaignsRouter.get(
   "/:id",
   apiHandler({ action: PermissionAction.CAMPAIGNS_VIEW }, async (req, _res, user) => {
     return campaignService.getById(user, String(req.params.id));
+  }),
+);
+
+campaignsRouter.post(
+  "/blocked-contacts",
+  apiHandler({ action: PermissionAction.CAMPAIGNS_WRITE }, async (req, _res, user) => {
+    const parsed = checkBlockedContactsSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const blockedPhones = await campaignService.findBlockedPhones(user, parsed.data.whatsappChannelId, parsed.data.phones);
+    return { blockedPhones };
   }),
 );
 

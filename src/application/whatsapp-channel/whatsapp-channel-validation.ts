@@ -62,6 +62,11 @@ export const updateWhatsappChannelSchema = createWhatsappChannelSchema.partial()
   /// limpa e volta a usar a mensagem padrão do Piloto; omitido não mexe no
   /// valor salvo.
   resetMessage: z.string().trim().nullish(),
+  /// Frases de bloqueio automático de campanha (ver Channel.wordsToBlockCampaign
+  /// no schema). Enviado sempre como lista completa — substitui a anterior.
+  wordsToBlockCampaign: z.array(z.string().trim().min(1)).optional(),
+  /// Liga/desliga a avaliação de wordsToBlockCampaign para este canal.
+  useWordsToBlockCampaign: z.boolean().optional(),
 });
 
 export const wabaLookupSchema = z.object({

@@ -1,5 +1,6 @@
 import type { Prisma } from "../../../generated/prisma/client";
 import { NotFoundError, ValidationError } from "../../domain/errors/app-error";
+import { normalizeBrazilianWaId } from "../../domain/utils/phone";
 import { sendCampaignToWorker } from "../../infrastructure/campaign-worker/campaign-worker-client";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import { listWabaTemplates } from "../../infrastructure/meta/meta-graph-client";
@@ -313,6 +314,35 @@ export const campaignService = {
       orderBy: { templateName: "asc" },
     });
     return { templates: rows.map((r) => r.templateName) };
+  },
+
+  /// Usado pela tela de "Nova campanha" ANTES de disparar: dado um canal e a
+  /// lista de telefones que vão receber o template, devolve quais deles têm
+  /// um Target bloqueado de campanha NESTE canal (ver TargetBlockCampaign,
+  /// criado pelo Inbound-Service quando o contato responde com uma frase de
+  /// Channel.wordsToBlockCampaign). O front usa isso pra avisar o usuário e,
+  /// se ele confirmar, remove esses telefones da lista antes de enviar.
+  async findBlockedPhones(user: AuthUser, whatsappChannelId: string, phones: string[]): Promise<string[]> {
+    const organizationId = user.activeOrganizationId!;
+    const channel = await prisma.channel.findFirst({ where: { id: whatsappChannelId, organizationId } });
+    if (!channel) throw new NotFoundError("WhatsApp Channel não encontrado.");
+
+    // waId normalizado -> telefone original enviado pelo front, pra devolver
+    // exatamente os valores que ele já tem na lista de contatos.
+    const normalizedToOriginal = new Map<string, string>();
+    for (const phone of phones) normalizedToOriginal.set(normalizeBrazilianWaId(phone), phone);
+
+    const blocks = await prisma.targetBlockCampaign.findMany({
+      where: { whatsappChannelId: channel.id, target: { waId: { in: [...normalizedToOriginal.keys()] } } },
+      select: { target: { select: { waId: true } } },
+    });
+
+    const blockedOriginals = new Set<string>();
+    for (const b of blocks) {
+      const original = b.target.waId ? normalizedToOriginal.get(b.target.waId) : undefined;
+      if (original) blockedOriginals.add(original);
+    }
+    return [...blockedOriginals];
   },
 
   async getById(user: AuthUser, id: string) {
