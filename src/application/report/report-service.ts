@@ -36,6 +36,23 @@ interface TopAttendant {
   closedTicketCount: number;
 }
 
+interface WeekdayResponseMetric {
+  weekday: string;
+  total: number;
+  responded: number;
+  responseRate: number | null;
+}
+
+/// Segunda a Domingo, na ordem pedida pelo produto — não é a ordem de
+/// Date#getDay() (0=domingo), por isso o mapeamento explícito abaixo.
+const WEEKDAY_LABELS_MON_TO_SUN = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
+
+/// Date#getDay() -> índice em WEEKDAY_LABELS_MON_TO_SUN (0=domingo vira o
+/// último rótulo, 1=segunda vira o primeiro, etc.).
+function weekdayLabelIndex(jsGetDay: number): number {
+  return (jsGetDay + 6) % 7;
+}
+
 export const reportService = {
   /// Cards "Contatos com agente" / "Contatos em atendimento humano" —
   /// contagem organization-wide, sem os filtros da tela de Contatos (a tela
@@ -229,7 +246,7 @@ export const reportService = {
       prisma.campaign.count({ where: { organizationId } }),
       prisma.campaignTarget.findMany({
         where: { campaign: { organizationId } },
-        select: { targetId: true, createdAt: true, status: true },
+        select: { targetId: true, createdAt: true, status: true, respondedCampaign: true },
       }),
     ]);
 
@@ -242,6 +259,21 @@ export const reportService = {
     // melhor a entrega; bem negativo indica muita falha de envio.
     const reachDelta = reachedContacts - totalContacts;
 
+    // Dia da semana do DISPARO (CampaignTarget.createdAt) x quantos daquele
+    // dia já têm respondedCampaign=true (ver Inbound-Service/campaign-response-service.ts,
+    // quem preenche essa flag). Só entre os disparos que de fato chegaram
+    // (REACHED_STATUSES) — um FAILED nunca chega a ser respondido.
+    const weekdayBuckets = WEEKDAY_LABELS_MON_TO_SUN.map((weekday) => ({ weekday, total: 0, responded: 0 }));
+    for (const d of dispatches) {
+      const bucket = weekdayBuckets[weekdayLabelIndex(d.createdAt.getDay())];
+      bucket.total += 1;
+      if (d.respondedCampaign) bucket.responded += 1;
+    }
+    const responsesByWeekday: WeekdayResponseMetric[] = weekdayBuckets.map((b) => ({
+      ...b,
+      responseRate: b.total > 0 ? (b.responded / b.total) * 100 : null,
+    }));
+
     if (reachedContacts === 0) {
       return {
         totalCampaigns,
@@ -251,6 +283,7 @@ export const reportService = {
         reachDelta,
         respondedDispatches: 0,
         responseRate: null as number | null,
+        responsesByWeekday,
       };
     }
 
@@ -297,6 +330,7 @@ export const reportService = {
       reachDelta,
       respondedDispatches,
       responseRate: (respondedDispatches / reachedContacts) * 100,
+      responsesByWeekday,
     };
   },
 
