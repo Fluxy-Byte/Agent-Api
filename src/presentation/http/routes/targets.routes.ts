@@ -24,7 +24,7 @@ targetsRouter.get(
   }),
 );
 
-// Precisa vir ANTES de "/:id", senão o Express casaria "stats" como id.
+// Precisa vir ANTES de "/:id", senão o Express casaria "stats"/"metadata-keys" como id.
 targetsRouter.get(
   "/stats",
   apiHandler({ action: PermissionAction.CONTACTS_VIEW }, async (req, _res, user) => {
@@ -32,6 +32,13 @@ targetsRouter.get(
     if (!parsed.success) throw new ValidationError("Filtros inválidos.", parsed.error.flatten());
 
     return targetService.getStats(user, parsed.data);
+  }),
+);
+
+targetsRouter.get(
+  "/metadata-keys",
+  apiHandler({ action: PermissionAction.CONTACTS_VIEW }, async (_req, _res, user) => {
+    return targetService.getMetadataKeys(user);
   }),
 );
 

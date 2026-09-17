@@ -13,9 +13,28 @@ import type {
   UpdateBlockedAgentsInput,
 } from "./target-validation";
 
-function buildTargetWhere(user: AuthUser, filter: ListTargetsFilter): Prisma.TargetWhereInput {
+/// Target.metadata é um Json livre (pares key:value) — Prisma não tem um
+/// filtro tipado pra "tem estas chaves", então resolve via SQL cru usando o
+/// operador nativo `?&` do Postgres (jsonb ?& text[] = tem TODAS as chaves
+/// do array). Retorna os ids que batem, pra virar um `id: { in: ... }` no
+/// where principal.
+async function findIdsWithAllMetadataKeys(organizationId: string, keys: string[]): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Target"
+    WHERE "organizationId" = ${organizationId} AND metadata ?& ${keys}::text[]
+  `;
+  return rows.map((r) => r.id);
+}
+
+async function buildTargetWhere(user: AuthUser, filter: ListTargetsFilter): Promise<Prisma.TargetWhereInput> {
+  const organizationId = user.activeOrganizationId!;
+  const metadataMatchIds =
+    filter.metadataKeys && filter.metadataKeys.length > 0
+      ? await findIdsWithAllMetadataKeys(organizationId, filter.metadataKeys)
+      : undefined;
+
   return {
-    organizationId: user.activeOrganizationId!,
+    organizationId,
     ...(filter.agentId ? { whatsappChannel: { agentId: filter.agentId } } : {}),
     ...(filter.name ? { name: { contains: filter.name, mode: "insensitive" } } : {}),
     ...(filter.phone ? { waId: { contains: filter.phone } } : {}),
@@ -29,12 +48,13 @@ function buildTargetWhere(user: AuthUser, filter: ListTargetsFilter): Prisma.Tar
           },
         }
       : {}),
+    ...(metadataMatchIds ? { id: { in: metadataMatchIds } } : {}),
   };
 }
 
 export const targetService = {
   async list(user: AuthUser, query: ListTargetsQuery) {
-    const where = buildTargetWhere(user, query);
+    const where = await buildTargetWhere(user, query);
 
     const [items, total] = await Promise.all([
       prisma.target.findMany({
@@ -53,7 +73,7 @@ export const targetService = {
   /// Métricas da fileira de cards do topo da tela de Contatos — mesmos
   /// filtros de `list()` (sem paginação), sempre recalculadas na hora.
   async getStats(user: AuthUser, filter: ListTargetsFilter) {
-    const where = buildTargetWhere(user, filter);
+    const where = await buildTargetWhere(user, filter);
 
     const [total, blocked, lastInteraction, topChannel, matchingTargets] = await Promise.all([
       prisma.target.count({ where }),
@@ -110,6 +130,21 @@ export const targetService = {
       lastInteractionAt: lastInteraction?.lastInteractionAt ?? null,
       primaryAgentName,
     };
+  },
+
+  /// Todas as chaves de metadata já usadas por algum contato da empresa —
+  /// alimenta o checkbox do filtro "Metadados" na tela de Contatos.
+  /// jsonb_object_keys é STRICT: Target.metadata NULL não gera linha, então
+  /// nem precisaria do filtro "IS NOT NULL" — deixado explícito por clareza.
+  async getMetadataKeys(user: AuthUser): Promise<string[]> {
+    const organizationId = user.activeOrganizationId!;
+    const rows = await prisma.$queryRaw<{ key: string }[]>`
+      SELECT DISTINCT key
+      FROM "Target", jsonb_object_keys(metadata) AS key
+      WHERE "organizationId" = ${organizationId} AND metadata IS NOT NULL
+      ORDER BY key
+    `;
+    return rows.map((r) => r.key);
   },
 
   /// Cadastro manual de contato (fora do fluxo normal, que é via webhook

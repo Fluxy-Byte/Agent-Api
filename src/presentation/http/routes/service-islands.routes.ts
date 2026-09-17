@@ -23,9 +23,13 @@ const renameSchema = z.object({
   allowActiveDispatch: z.boolean().optional(),
 });
 
+// max 1000 (não 50) porque o botão "Exportar" do histórico de tickets
+// (Agent-Console/history-tab.tsx#exportCsv) busca até 1000 linhas numa
+// página só pra montar o CSV — a paginação normal da tela nunca passa de 50
+// (PAGE_SIZE_OPTIONS do frontend).
 const paginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(50).default(10),
+  pageSize: z.coerce.number().int().min(1).max(1000).default(10),
 });
 
 const TICKET_STATUS_VALUES = ["WAITING", "IN_PROGRESS", "CLOSED"] as const;

@@ -134,8 +134,7 @@ export const companyService = {
   },
 
   /// Gera (ou rotaciona) o token de acesso à API externa (Fluxy Agents) desta
-  /// empresa — o valor bruto só existe nesta resposta, nunca mais é devolvido
-  /// em claro (ver sanitizeCompany em companies.routes.ts).
+  /// empresa.
   async generateApiToken(user: AuthUser, organizationId: string) {
     await this.getById(user, organizationId);
 
@@ -146,6 +145,14 @@ export const companyService = {
     });
 
     return { token };
+  },
+
+  /// Devolve o token de acesso à API externa já configurado nesta empresa
+  /// (ou null se nunca foi gerado) — quem chama a rota já checou a mesma
+  /// permissão de GERENTE/admin usada para gerar o token.
+  async getApiToken(user: AuthUser, organizationId: string) {
+    const organization = await this.getById(user, organizationId);
+    return { token: organization.tokenAcessApi ?? null };
   },
 
   /// Gera um código de convite (invitationMember) para a empresa, com o papel

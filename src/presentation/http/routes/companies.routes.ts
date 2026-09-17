@@ -17,9 +17,10 @@ const redeemInviteCodeSchema = z.object({ code: z.string().min(1) });
 
 export const companiesRouter = Router();
 
-/// Nunca deixa o token de acesso à API externa sair em claro pela API
-/// (resposta HTTP ou AuditLog) — o front só precisa saber se já existe um
-/// token configurado ou não.
+/// Nunca deixa o token de acesso à API externa sair junto do objeto Company
+/// (nem em resposta HTTP nem em AuditLog) — o valor em claro só é devolvido
+/// pelas rotas dedicadas GET/POST /:id/api-token, que exigem papel de
+/// GERENTE/admin.
 function sanitizeCompany<T extends { tokenAcessApi?: string | null }>(
   company: T,
 ): Omit<T, "tokenAcessApi"> & { hasApiAccessToken: boolean } {
@@ -203,6 +204,35 @@ companiesRouter.post(
       resourceType: "Company",
       resourceId: organizationId,
       afterState: { hasApiAccessToken: true },
+    });
+
+    return { token };
+  }),
+);
+
+/// Devolve o token de acesso à API já configurado, se houver — mesma
+/// checagem manual de papel (GERENTE/admin) da rota de geração acima, já que
+/// ler o token ativo é tão sensível quanto gerar um novo.
+companiesRouter.get(
+  "/:id/api-token",
+  apiHandler({ requireCompany: false }, async (req, _res, user) => {
+    const organizationId = String(req.params.id);
+
+    if (!user.isPlatformAdmin) {
+      const requesterMembership = await companyService
+        .listMembers(user, organizationId)
+        .then((members) => members.find((m) => m.userId === user.id));
+      if (requesterMembership?.role !== "GERENTE" || requesterMembership.blocked) {
+        throw new ForbiddenError("Apenas Gerente ou Administrador podem visualizar o token de acesso à API.");
+      }
+    }
+
+    const { token } = await companyService.getApiToken(user, organizationId);
+
+    await recordAudit(req, user, {
+      action: "API_TOKEN_VIEWED",
+      resourceType: "Company",
+      resourceId: organizationId,
     });
 
     return { token };

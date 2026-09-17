@@ -8,6 +8,16 @@ export const listTargetsFilterSchema = z.object({
   status: z.enum(["AI", "HUMAN", "FINISHED"]).optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
+  /// Lista separada por vírgula das chaves de Target.metadata que o contato
+  /// precisa ter TODAS presentes (ver select "Metadados" da tela de
+  /// Contatos) — não valida contra as chaves de fato existentes, um nome
+  /// inexistente só filtra pra 0 resultados.
+  metadataKeys: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((s) => s.split(",").map((k) => k.trim()).filter(Boolean))
+    .optional(),
 });
 
 export const listTargetsQuerySchema = listTargetsFilterSchema.extend({

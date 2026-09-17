@@ -2,6 +2,7 @@ import { MESSAGES_COLLECTION, type MessageDocument } from "../../domain/contract
 import { getMongoDb } from "../../infrastructure/database/mongo/client";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
+import type { ReportOverviewFilter } from "./report-validation";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -56,22 +57,23 @@ function weekdayLabelIndex(jsGetDay: number): number {
 export const reportService = {
   /// Cards "Contatos com agente" / "Contatos em atendimento humano" —
   /// contagem organization-wide, sem os filtros da tela de Contatos (a tela
-  /// de Relatórios não tem os mesmos filtros).
-  async getContactsByStatus(user: AuthUser) {
+  /// de Relatórios não tem os mesmos filtros). whatsappChannelId opcional
+  /// recorta para um único canal (ver select "Canal" da tela de Métricas).
+  async getContactsByStatus(user: AuthUser, whatsappChannelId?: string) {
     const organizationId = user.activeOrganizationId!;
     const [withAgent, withHuman] = await Promise.all([
-      prisma.target.count({ where: { organizationId, status: "AI" } }),
-      prisma.target.count({ where: { organizationId, status: "HUMAN" } }),
+      prisma.target.count({ where: { organizationId, whatsappChannelId, status: "AI" } }),
+      prisma.target.count({ where: { organizationId, whatsappChannelId, status: "HUMAN" } }),
     ]);
     return { withAgent, withHuman };
   },
 
   /// Duração média de conversa = média de (lastInteractionAt -
   /// firstInteractionAt) entre os contatos que já tiveram alguma interação.
-  async getAvgConversationDuration(user: AuthUser) {
+  async getAvgConversationDuration(user: AuthUser, whatsappChannelId?: string) {
     const organizationId = user.activeOrganizationId!;
     const targets = await prisma.target.findMany({
-      where: { organizationId, lastInteractionAt: { not: null } },
+      where: { organizationId, whatsappChannelId, lastInteractionAt: { not: null } },
       select: { firstInteractionAt: true, lastInteractionAt: true },
     });
 
@@ -88,7 +90,10 @@ export const reportService = {
   /// rápida — duração do atendimento = mesmo handlingDurationMs usado no
   /// monitoramento (assignedAt -> closedAt, só tickets fechados e assumidos),
   /// não o tempo de vida total do ticket (que incluiria espera na fila).
-  async getQueueMetrics(user: AuthUser) {
+  /// Ticket não tem whatsappChannelId direto — o recorte por canal passa pelo
+  /// Target do ticket. A lista de filas nunca muda com o filtro (fila não
+  /// pertence a um canal); só a contagem de tickets de cada uma.
+  async getQueueMetrics(user: AuthUser, whatsappChannelId?: string) {
     const organizationId = user.activeOrganizationId!;
 
     const [queues, tickets] = await Promise.all([
@@ -97,7 +102,7 @@ export const reportService = {
         select: { id: true, name: true, serviceIsland: { select: { name: true } } },
       }),
       prisma.ticket.findMany({
-        where: { organizationId },
+        where: { organizationId, target: whatsappChannelId ? { whatsappChannelId } : undefined },
         select: { queueId: true, status: true, assignedAt: true, closedAt: true },
       }),
     ]);
@@ -144,7 +149,9 @@ export const reportService = {
 
   /// Top 5 canais por crescimento de contatos novos: últimos 30 dias vs os
   /// 30 dias anteriores. Canal sem contato nenhum nos dois períodos fica de
-  /// fora do ranking (sem sinal pra comparar).
+  /// fora do ranking (sem sinal pra comparar). Ranking compara canais entre
+  /// si, então não faz sentido com um canal específico selecionado — nesse
+  /// caso a tela nem chama esse método (ver report-service#getOverview).
   async getTopChannelsByGrowth(user: AuthUser): Promise<ChannelGrowth[]> {
     const organizationId = user.activeOrganizationId!;
     const now = new Date();
@@ -200,12 +207,19 @@ export const reportService = {
 
   /// Top 5 atendentes por tickets encerrados (status CLOSED, independente do
   /// motivo de fechamento) — organization-wide, não recorta por fila/ilha.
-  async getTopAttendantsByClosedTickets(user: AuthUser): Promise<TopAttendant[]> {
+  /// Ticket não tem whatsappChannelId direto — o recorte por canal passa
+  /// pelo Target do ticket (mesmo esquema de getQueueMetrics).
+  async getTopAttendantsByClosedTickets(user: AuthUser, whatsappChannelId?: string): Promise<TopAttendant[]> {
     const organizationId = user.activeOrganizationId!;
 
     const grouped = await prisma.ticket.groupBy({
       by: ["assignedUserId"],
-      where: { organizationId, status: "CLOSED", assignedUserId: { not: null } },
+      where: {
+        organizationId,
+        status: "CLOSED",
+        assignedUserId: { not: null },
+        target: whatsappChannelId ? { whatsappChannelId } : undefined,
+      },
       _count: { _all: true },
       orderBy: { _count: { assignedUserId: "desc" } },
       take: 5,
@@ -234,7 +248,7 @@ export const reportService = {
   /// do disparo e antes do PRÓXIMO disparo pro mesmo contato (se houver) —
   /// assim uma resposta é atribuída ao disparo que efetivamente a motivou,
   /// mesmo quando o mesmo contato recebeu várias campanhas.
-  async getCampaignMetrics(user: AuthUser) {
+  async getCampaignMetrics(user: AuthUser, whatsappChannelId?: string) {
     const organizationId = user.activeOrganizationId!;
 
     // totalContacts/totalFailures vêm da MESMA query ao vivo do CampaignTarget
@@ -243,9 +257,9 @@ export const reportService = {
     // são ajustados quando um Target é apagado (o CampaignTarget dele some
     // em cascata, mas o contador da campanha fica com o valor antigo).
     const [totalCampaigns, allDispatches] = await Promise.all([
-      prisma.campaign.count({ where: { organizationId } }),
+      prisma.campaign.count({ where: { organizationId, whatsappChannelId } }),
       prisma.campaignTarget.findMany({
-        where: { campaign: { organizationId } },
+        where: { campaign: { organizationId, whatsappChannelId } },
         select: { targetId: true, createdAt: true, status: true, respondedCampaign: true },
       }),
     ]);
@@ -334,7 +348,9 @@ export const reportService = {
     };
   },
 
-  async getOverview(user: AuthUser) {
+  async getOverview(user: AuthUser, filter: ReportOverviewFilter = {}) {
+    const { whatsappChannelId } = filter;
+
     const [
       contactsByStatus,
       avgConversationDuration,
@@ -344,13 +360,15 @@ export const reportService = {
       topAttendantsByClosedTickets,
       campaignMetrics,
     ] = await Promise.all([
-      this.getContactsByStatus(user),
-      this.getAvgConversationDuration(user),
-      this.getQueueMetrics(user),
+      this.getContactsByStatus(user, whatsappChannelId),
+      this.getAvgConversationDuration(user, whatsappChannelId),
+      this.getQueueMetrics(user, whatsappChannelId),
       prisma.channel.count({ where: { organizationId: user.activeOrganizationId! } }),
-      this.getTopChannelsByGrowth(user),
-      this.getTopAttendantsByClosedTickets(user),
-      this.getCampaignMetrics(user),
+      // Ranking compara canais entre si — sem sentido com um canal
+      // específico selecionado, então nem consulta nesse caso.
+      whatsappChannelId ? Promise.resolve([]) : this.getTopChannelsByGrowth(user),
+      this.getTopAttendantsByClosedTickets(user, whatsappChannelId),
+      this.getCampaignMetrics(user, whatsappChannelId),
     ]);
 
     return {
