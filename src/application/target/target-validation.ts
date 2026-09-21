@@ -28,7 +28,7 @@ export const listTargetsQuerySchema = listTargetsFilterSchema.extend({
 });
 
 export const historyQuerySchema = z.object({
-  messageType: z.enum(["TEXT", "AUDIO", "IMAGE", "DOCUMENT", "STICKER"]).optional(),
+  messageType: z.enum(["TEXT", "AUDIO", "IMAGE", "DOCUMENT", "STICKER", "VIDEO"]).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
 
@@ -43,8 +43,13 @@ export const updateBlockedAgentsSchema = z.object({
   blockedAgentIds: z.array(z.string().trim().min(1)),
 });
 
+export const updateMetadataSchema = z.object({
+  metadata: z.record(z.string(), z.unknown()),
+});
+
 export type ListTargetsFilter = z.infer<typeof listTargetsFilterSchema>;
 export type ListTargetsQuery = z.infer<typeof listTargetsQuerySchema>;
 export type HistoryQuery = z.infer<typeof historyQuerySchema>;
 export type CreateTargetInput = z.infer<typeof createTargetSchema>;
 export type UpdateBlockedAgentsInput = z.infer<typeof updateBlockedAgentsSchema>;
+export type UpdateMetadataInput = z.infer<typeof updateMetadataSchema>;

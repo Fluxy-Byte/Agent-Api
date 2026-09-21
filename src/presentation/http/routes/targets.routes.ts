@@ -6,6 +6,7 @@ import {
   listTargetsFilterSchema,
   listTargetsQuerySchema,
   updateBlockedAgentsSchema,
+  updateMetadataSchema,
 } from "../../../application/target/target-validation";
 import { PermissionAction } from "../../../domain/enums/permission-action";
 import { ValidationError } from "../../../domain/errors/app-error";
@@ -77,6 +78,21 @@ targetsRouter.get(
   }),
 );
 
+targetsRouter.post(
+  "/:id/crm-card",
+  apiHandler({ action: PermissionAction.CONTACTS_WRITE }, async (req, _res, user) => {
+    const card = await targetService.createCrmCard(user, String(req.params.id));
+    await recordAudit(req, user, {
+      action: "CRM_CARD_CREATED",
+      resourceType: "CardCrm",
+      resourceId: card.id,
+      afterState: { targetId: card.targetId, stagesCrmId: card.stagesCrmId },
+    });
+
+    return card;
+  }),
+);
+
 targetsRouter.patch(
   "/:id/blocked-agents",
   apiHandler({ action: PermissionAction.CONTACTS_WRITE }, async (req, _res, user) => {
@@ -93,6 +109,28 @@ targetsRouter.patch(
       resourceId: target.id,
       beforeState: { blockedAgentIds: before.blockedAgentIds },
       afterState: { blockedAgentIds: target.blockedAgentIds },
+    });
+
+    return target;
+  }),
+);
+
+targetsRouter.patch(
+  "/:id/metadata",
+  apiHandler({ action: PermissionAction.CONTACTS_WRITE }, async (req, _res, user) => {
+    const parsed = updateMetadataSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const targetId = String(req.params.id);
+    const before = await targetService.getById(user, targetId);
+    const target = await targetService.updateMetadata(user, targetId, parsed.data);
+
+    await recordAudit(req, user, {
+      action: "TARGET_METADATA_UPDATED",
+      resourceType: "Target",
+      resourceId: target.id,
+      beforeState: { metadata: before.metadata },
+      afterState: { metadata: target.metadata },
     });
 
     return target;

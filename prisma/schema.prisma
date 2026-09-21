@@ -38,6 +38,7 @@ model User {
   invitationMembersRedeemed InvitationMember[]
   queueMemberships          QueueMember[]
   assignedTickets           Ticket[]
+  cardCrmComments           CardCrmComment[]
   campaignsRoutedToMe       Campaign[]         @relation("CampaignRouteToUser")
 
   @@unique([email])
@@ -119,6 +120,7 @@ model Organization {
   campaigns         Campaign[]
   auditLogs         AuditLog[]
   errorLogs         ErrorLog[]
+  crmToBusiness     CrmToBusiness?
 
   @@unique([slug])
   @@map("organization")
@@ -423,6 +425,9 @@ model ServiceIsland {
   /// Se true, atendentes de qualquer fila desta ilha podem disparar campanha
   /// ativa pelo Fluxy Desk (ver Desk-API POST /dispatch).
   allowActiveDispatch Boolean @default(false)
+  /// Se false, atendentes de qualquer fila desta ilha não conseguem enviar
+  /// áudio (gravado ou anexado) nos tickets — ver Desk-API ticket-service.sendMessage.
+  allowAudioMessages  Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -585,6 +590,7 @@ model Target {
   tickets              Ticket[]
   campaignTargets      CampaignTarget[]
   targetBlockCampaigns TargetBlockCampaign[]
+  cardCrm              CardCrm?
 
   /// bsuid é o vínculo principal (Postgres não colide NULLs entre si, então
   /// múltiplos Target sem bsuid/waId ainda cabem nos dois índices sem briga).
@@ -854,6 +860,7 @@ enum MessageType {
   IMAGE
   DOCUMENT
   STICKER
+  VIDEO
 }
 
 /// Rastro (ids + tipo, sem conteúdo — o conteúdo mora no Mongo) de cada
@@ -943,4 +950,92 @@ model ErrorLog {
 
   @@index([organizationId])
   @@index([route])
+}
+
+/// Todo empresa nasce com o seu CRM já criado (ver company-service.ts#create)
+/// — 1:1 com Organization.
+model CrmToBusiness {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stagesCrm StagesCrm[]
+  cards     CardCrm[]
+}
+
+/// Coluna do Kanban de CRM. position é definida pelo usuário na criação
+/// (inteiro >= 1, único por CRM — ver crm-service.ts#createStage pro
+/// deslocamento automático quando a posição já está ocupada).
+model StagesCrm {
+  id              String        @id @default(cuid())
+  nameStage       String
+  position        Int
+  crmToBusinessId String
+  crmToBusiness   CrmToBusiness @relation(fields: [crmToBusinessId], references: [id], onDelete: Cascade)
+
+  /// Marca o estágio "Início" criado junto com o CRM (ver
+  /// company-service.ts#create) — todo lead novo nasce nele (mesmo padrão de
+  /// Queue.isDefault).
+  isDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cards CardCrm[]
+
+  @@unique([crmToBusinessId, position])
+  @@index([crmToBusinessId])
+}
+
+/// Prioridade de atenção do card no CRM, escolhida pelo usuário.
+enum CardPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+/// Um card por Target (1:1) — criado automaticamente pelo Inbound-Service
+/// assim que o Target nasce (ver Inbound-Service/src/application/webhook/
+/// crm-card-service.ts), sempre no estágio isDefault=true.
+model CardCrm {
+  id              String        @id @default(cuid())
+  targetId        String        @unique
+  target          Target        @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  crmToBusinessId String
+  crmToBusiness   CrmToBusiness @relation(fields: [crmToBusinessId], references: [id], onDelete: Cascade)
+  stagesCrmId     String?
+  stagesCrm       StagesCrm?    @relation(fields: [stagesCrmId], references: [id], onDelete: SetNull)
+
+  /// Chaves S3 (não URLs) dos arquivos anexados ao card — o Agent-Api gera a
+  /// URL presignada de leitura na hora de devolver o card (ver
+  /// crm-service.ts#getCard), então funciona com bucket privado.
+  attachments String[] @default([])
+
+  statusPriority CardPriority @default(LOW)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments CardCrmComment[]
+
+  @@index([crmToBusinessId])
+  @@index([stagesCrmId])
+}
+
+/// Comentário deixado por qualquer usuário da empresa no card do CRM.
+model CardCrmComment {
+  id        String   @id @default(cuid())
+  cardCrmId String
+  cardCrm   CardCrm  @relation(fields: [cardCrmId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment   String
+  createdAt DateTime @default(now())
+
+  @@index([cardCrmId])
+  @@index([userId])
 }

@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env } from "../../config/env";
 
@@ -38,4 +38,37 @@ export async function createRagDocumentUploadUrl(input: {
   );
 
   return { uploadUrl, s3Key };
+}
+
+/// Prefixo das chaves dos anexos de um card do CRM — usado tanto pra gerar a
+/// chave quanto pra validar (crm-service.ts) que a chave confirmada pelo
+/// front realmente pertence a este card/empresa.
+export function crmAttachmentKeyPrefix(organizationId: string, cardId: string): string {
+  return `${env.SEAWEEDFS_S3_PREFIX}/crm-attachments/${organizationId}/${cardId}/`;
+}
+
+/// URL presignada de PUT pro anexo de um card ir direto do navegador pro S3.
+export async function createCrmAttachmentUploadUrl(input: {
+  organizationId: string;
+  cardId: string;
+  fileName: string;
+  contentType: string;
+}): Promise<{ uploadUrl: string; s3Key: string }> {
+  const safeFileName = input.fileName.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  const s3Key = `${crmAttachmentKeyPrefix(input.organizationId, input.cardId)}${Date.now()}-${safeFileName}`;
+
+  const uploadUrl = await getSignedUrl(
+    client,
+    new PutObjectCommand({ Bucket: env.SEAWEEDFS_S3_BUCKET, Key: s3Key, ContentType: input.contentType }),
+    { expiresIn: 300 },
+  );
+
+  return { uploadUrl, s3Key };
+}
+
+/// URL presignada de leitura (1h) — o bucket não precisa ser público.
+export function createDownloadUrl(s3Key: string): Promise<string> {
+  return getSignedUrl(client, new GetObjectCommand({ Bucket: env.SEAWEEDFS_S3_BUCKET, Key: s3Key }), {
+    expiresIn: 3600,
+  });
 }

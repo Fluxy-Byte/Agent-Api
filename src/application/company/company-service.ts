@@ -20,29 +20,43 @@ export const companyService = {
   /// Sempre cria Organization + Member(GERENTE) diretamente — nunca pela API de
   /// criação de organização do Better Auth, pra garantir que o Member nasça com
   /// um valor válido do nosso union type de papéis, não o default do plugin.
+  /// Toda empresa já nasce com seu CRM (CrmToBusiness) e o estágio "Início"
+  /// (isDefault=true, position=1) — ver crm-service.ts e Inbound-Service/src/
+  /// application/webhook/crm-card-service.ts, que depende desse estágio existir
+  /// pra todo lead novo cair nele.
   async create(user: AuthUser, input: { name: string; cnpj: string }) {
-    const organization = await prisma.organization.create({
-      data: {
-        id: randomUUID(),
-        name: input.name,
-        slug: slugify(input.name),
-        cnpj: input.cnpj,
-        status: "ACTIVE",
-        createdAt: new Date(),
-      },
-    });
+    return prisma.$transaction(async (tx) => {
+      const organization = await tx.organization.create({
+        data: {
+          id: randomUUID(),
+          name: input.name,
+          slug: slugify(input.name),
+          cnpj: input.cnpj,
+          status: "ACTIVE",
+          createdAt: new Date(),
+        },
+      });
 
-    await prisma.member.create({
-      data: {
-        id: randomUUID(),
-        organizationId: organization.id,
-        userId: user.id,
-        role: "GERENTE",
-        createdAt: new Date(),
-      },
-    });
+      await tx.member.create({
+        data: {
+          id: randomUUID(),
+          organizationId: organization.id,
+          userId: user.id,
+          role: "GERENTE",
+          createdAt: new Date(),
+        },
+      });
 
-    return organization;
+      const crmToBusiness = await tx.crmToBusiness.create({
+        data: { organizationId: organization.id },
+      });
+
+      await tx.stagesCrm.create({
+        data: { crmToBusinessId: crmToBusiness.id, nameStage: "Início", position: 1, isDefault: true },
+      });
+
+      return organization;
+    });
   },
 
   async listForUser(user: AuthUser) {

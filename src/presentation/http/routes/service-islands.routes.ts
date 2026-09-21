@@ -21,6 +21,7 @@ const renameSchema = z.object({
   name: z.string().trim().min(1),
   requireCloseTag: z.boolean().optional(),
   allowActiveDispatch: z.boolean().optional(),
+  allowAudioMessages: z.boolean().optional(),
 });
 
 // max 1000 (não 50) porque o botão "Exportar" do histórico de tickets
@@ -116,6 +117,7 @@ serviceIslandsRouter.put(
       parsed.data.name,
       parsed.data.requireCloseTag,
       parsed.data.allowActiveDispatch,
+      parsed.data.allowAudioMessages,
     );
 
     await recordAudit(req, user, {

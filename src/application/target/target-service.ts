@@ -2,6 +2,7 @@ import { Prisma } from "../../../generated/prisma/client";
 import { MESSAGES_COLLECTION, type MessageDocument } from "../../domain/contracts/message-document";
 import { ConflictError, NotFoundError, ValidationError } from "../../domain/errors/app-error";
 import { normalizeBrazilianWaId } from "../../domain/utils/phone";
+import { createCardCrmForTarget } from "../crm/crm-service";
 import { getMongoDb } from "../../infrastructure/database/mongo/client";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
@@ -11,6 +12,7 @@ import type {
   ListTargetsFilter,
   ListTargetsQuery,
   UpdateBlockedAgentsInput,
+  UpdateMetadataInput,
 } from "./target-validation";
 
 /// Target.metadata é um Json livre (pares key:value) — Prisma não tem um
@@ -155,8 +157,9 @@ export const targetService = {
     });
     if (!channel) throw new NotFoundError("WhatsApp Channel não encontrado.");
 
+    let target;
     try {
-      return await prisma.target.create({
+      target = await prisma.target.create({
         data: {
           organizationId: user.activeOrganizationId!,
           whatsappChannelId: channel.id,
@@ -172,12 +175,36 @@ export const targetService = {
       }
       throw error;
     }
+
+    // Todo contato novo ganha card no CRM (mesmo padrão do webhook inbound).
+    // Falha aqui não pode desfazer o cadastro — o card pode ser gerado depois
+    // pelo botão na tela do contato.
+    try {
+      await createCardCrmForTarget(target.id, target.organizationId);
+    } catch (error) {
+      console.error(`[CRM-CARD][target-service] targetId=${target.id} — falha ao criar CardCrm:`, error);
+    }
+
+    return target;
+  },
+
+  /// Botão "Gerar card no CRM" da tela do contato — só funciona se o
+  /// contato ainda não tem card.
+  async createCrmCard(user: AuthUser, id: string) {
+    const target = await prisma.target.findFirst({
+      where: { id, organizationId: user.activeOrganizationId! },
+    });
+    if (!target) throw new NotFoundError("Contato não encontrado.");
+
+    const { card, created } = await createCardCrmForTarget(target.id, target.organizationId);
+    if (!created) throw new ConflictError("Este contato já possui um card no CRM.");
+    return card;
   },
 
   async getById(user: AuthUser, id: string) {
     const target = await prisma.target.findFirst({
       where: { id, organizationId: user.activeOrganizationId! },
-      include: { whatsappChannel: { include: { agent: true } } },
+      include: { whatsappChannel: { include: { agent: true } }, cardCrm: { select: { id: true } } },
     });
     if (!target) throw new NotFoundError("Contato não encontrado.");
 
@@ -235,6 +262,21 @@ export const targetService = {
     return prisma.target.update({
       where: { id: target.id },
       data: { blockedAgentIds: input.blockedAgentIds },
+    });
+  },
+
+  /// Edição dos metadados livres (key:value) do contato pelo Agent Console —
+  /// substitui o objeto inteiro (o front monta o objeto final a partir das
+  /// linhas editadas e manda completo, ver metadata-editor.tsx).
+  async updateMetadata(user: AuthUser, id: string, input: UpdateMetadataInput) {
+    const target = await prisma.target.findFirst({
+      where: { id, organizationId: user.activeOrganizationId! },
+    });
+    if (!target) throw new NotFoundError("Contato não encontrado.");
+
+    return prisma.target.update({
+      where: { id: target.id },
+      data: { metadata: input.metadata as Prisma.InputJsonValue },
     });
   },
 };
