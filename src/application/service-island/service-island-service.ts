@@ -111,6 +111,7 @@ export const serviceIslandService = {
     requireCloseTag?: boolean,
     allowActiveDispatch?: boolean,
     allowAudioMessages?: boolean,
+    useAttendantSignature?: boolean,
   ) {
     await this.getById(user, id);
     return prisma.serviceIsland.update({
@@ -120,6 +121,7 @@ export const serviceIslandService = {
         ...(requireCloseTag === undefined ? {} : { requireCloseTag }),
         ...(allowActiveDispatch === undefined ? {} : { allowActiveDispatch }),
         ...(allowAudioMessages === undefined ? {} : { allowAudioMessages }),
+        ...(useAttendantSignature === undefined ? {} : { useAttendantSignature }),
       },
     });
   },

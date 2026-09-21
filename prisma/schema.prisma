@@ -428,6 +428,10 @@ model ServiceIsland {
   /// Se false, atendentes de qualquer fila desta ilha não conseguem enviar
   /// áudio (gravado ou anexado) nos tickets — ver Desk-API ticket-service.sendMessage.
   allowAudioMessages  Boolean @default(true)
+  /// Se true, o Desk-Worker assina toda mensagem de texto do atendente com o
+  /// nome dele em negrito (*Nome:*) numa linha acima do texto — ver Desk-Worker
+  /// handle-desk-message-outbound.ts.
+  useAttendantSignature Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
