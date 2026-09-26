@@ -16,7 +16,7 @@ const envSchema = z.object({
   CORS_ALLOWED_ORIGINS: z
     .string()
     .default(
-      "https://agentes.fluxytechnologies.com.br,https://desk.fluxytechnologies.com.br,http://localhost:7072,http://localhost:7080",
+      "https://agentes.sturnusflow.com.br,https://desk.sturnusflow.com.br,http://localhost:7072,http://localhost:7080",
     )
     .transform((value) => value.split(",").map((origin) => origin.trim())),
 
@@ -54,10 +54,6 @@ const envSchema = z.object({
   /// Base URL do Campaign-Worker (POST /campaign/send) — autenticado com o
   /// mesmo INTERNAL_API_KEY acima.
   CAMPAIGN_WORKER_URL: z.string().min(1),
-
-  /// Base URL do AI-Worker/max (POST /rag/ingest) — autenticado com o mesmo
-  /// INTERNAL_API_KEY acima.
-  MAX_WORKER_URL: z.string().min(1),
 
   /// WhatsApp Channel (WABA) do agente "max"/Metrópole — preenchido só depois
   /// que o número da Metrópole for conectado ao agente no Agent Console (ver

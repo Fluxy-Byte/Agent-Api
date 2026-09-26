@@ -2,7 +2,7 @@ import { agentService } from "../agent/agent-service";
 import { NotFoundError } from "../../domain/errors/app-error";
 import { tryDecryptToken } from "../../infrastructure/crypto/token-cipher";
 import { createRagDocumentUploadUrl } from "../../infrastructure/storage/s3-client";
-import { sendRagDocumentToWorker } from "../../infrastructure/max-worker/max-worker-client";
+import { publishRagIngest } from "../../infrastructure/ai-worker/rag-ingest-publisher";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
 import type { CreateRagDocumentInput, PresignRagDocumentInput } from "./rag-document-validation";
@@ -26,10 +26,10 @@ export const ragDocumentService = {
     });
   },
 
-  /// Cria o registro (PROCESSING) de forma síncrona e delega a extração/chunking/
-  /// embedding pro worker Python — mesmo desenho do CampaignService (cria antes de
-  /// enfileirar). Se a chamada ao worker falhar, o documento fica órfão em
-  /// PROCESSING — aceitável pro escopo, mesmo comportamento já aceito no Campaign.
+  /// Cria o registro (PROCESSING) de forma síncrona e enfileira a extração/
+  /// chunking/embedding pro worker Python do próprio agente (fila
+  /// task.agent.<nome>.rag). Se o worker desse agente não estiver rodando, o
+  /// documento fica em PROCESSING até a instância subir e consumir a fila.
   async create(user: AuthUser, agentId: string, input: CreateRagDocumentInput) {
     const agent = await agentService.getById(user, agentId);
 
@@ -44,7 +44,7 @@ export const ragDocumentService = {
       },
     });
 
-    await sendRagDocumentToWorker({
+    await publishRagIngest(agent.name, {
       ragDocumentId: document.id,
       agentId: agent.id,
       organizationId: user.activeOrganizationId!,
