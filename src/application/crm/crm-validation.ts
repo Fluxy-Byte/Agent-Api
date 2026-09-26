@@ -26,6 +26,10 @@ export const addAttachmentSchema = z.object({
   s3Key: z.string().trim().min(1, "Arquivo não foi enviado."),
 });
 
+export const removeAttachmentQuerySchema = z.object({
+  s3Key: z.string().trim().min(1, "Informe o arquivo."),
+});
+
 export const createCommentSchema = z.object({
   comment: z.string().trim().min(1, "Escreva um comentário.").max(2000, "Comentário muito longo (máx. 2000 caracteres)."),
 });

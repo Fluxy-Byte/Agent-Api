@@ -1,4 +1,4 @@
-import { NotFoundError, ValidationError } from "../../domain/errors/app-error";
+import { ForbiddenError, NotFoundError, ValidationError } from "../../domain/errors/app-error";
 import { prisma } from "../../infrastructure/database/prisma/client";
 import type { AuthUser } from "../../presentation/http/types/auth-user";
 import {
@@ -197,6 +197,43 @@ export const crmService = {
       where: { id: card.id },
       data: { attachments: { push: input.s3Key } },
     });
+  },
+
+  /// Só tira a chave da lista do card — o arquivo continua no S3 de propósito
+  /// (pedido do produto: remover do card não é apagar o arquivo).
+  async removeAttachment(user: AuthUser, cardId: string, s3Key: string) {
+    const card = await this.findCard(user, cardId);
+    if (!card.attachments.includes(s3Key)) throw new NotFoundError("Arquivo não encontrado neste card.");
+
+    return prisma.cardCrm.update({
+      where: { id: card.id },
+      data: { attachments: card.attachments.filter((key) => key !== s3Key) },
+    });
+  },
+
+  /// Editar/apagar comentário é só do autor — nem Gerente mexe no comentário
+  /// de outra pessoa.
+  async findOwnComment(user: AuthUser, cardId: string, commentId: string) {
+    const card = await this.findCard(user, cardId);
+    const comment = await prisma.cardCrmComment.findFirst({ where: { id: commentId, cardCrmId: card.id } });
+    if (!comment) throw new NotFoundError("Comentário não encontrado.");
+    if (comment.userId !== user.id) throw new ForbiddenError("Só o autor pode alterar este comentário.");
+    return comment;
+  },
+
+  async updateComment(user: AuthUser, cardId: string, commentId: string, input: CreateCommentInput) {
+    const comment = await this.findOwnComment(user, cardId, commentId);
+    return prisma.cardCrmComment.update({
+      where: { id: comment.id },
+      data: { comment: input.comment },
+      include: { user: { select: { id: true, name: true } } },
+    });
+  },
+
+  async deleteComment(user: AuthUser, cardId: string, commentId: string) {
+    const comment = await this.findOwnComment(user, cardId, commentId);
+    await prisma.cardCrmComment.delete({ where: { id: comment.id } });
+    return comment;
   },
 
   async addComment(user: AuthUser, cardId: string, input: CreateCommentInput) {

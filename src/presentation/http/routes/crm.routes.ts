@@ -8,6 +8,7 @@ import {
   funnelFieldSchema,
   moveCardSchema,
   presignAttachmentSchema,
+  removeAttachmentQuerySchema,
   updatePrioritySchema,
   updateStageSchema,
 } from "../../../application/crm/crm-validation";
@@ -131,6 +132,25 @@ crmRouter.post(
   }),
 );
 
+// s3Key vai na query (DELETE sem body) — o arquivo continua no S3.
+crmRouter.delete(
+  "/cards/:id/attachments",
+  apiHandler({ action: PermissionAction.CRM_WRITE }, async (req, _res, user) => {
+    const parsed = removeAttachmentQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const card = await crmService.removeAttachment(user, String(req.params.id), parsed.data.s3Key);
+    await recordAudit(req, user, {
+      action: "CRM_CARD_ATTACHMENT_REMOVED",
+      resourceType: "CardCrm",
+      resourceId: card.id,
+      beforeState: { s3Key: parsed.data.s3Key },
+    });
+
+    return { id: card.id, attachments: card.attachments };
+  }),
+);
+
 // Comentar só exige poder ver o CRM — qualquer usuário com acesso ao card.
 crmRouter.post(
   "/cards/:id/comments",
@@ -139,6 +159,25 @@ crmRouter.post(
     if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
 
     return crmService.addComment(user, String(req.params.id), parsed.data);
+  }),
+);
+
+// Editar/apagar: só o autor do comentário (checado em crm-service.ts#findOwnComment).
+crmRouter.patch(
+  "/cards/:id/comments/:commentId",
+  apiHandler({ action: PermissionAction.CRM_VIEW }, async (req, _res, user) => {
+    const parsed = createCommentSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    return crmService.updateComment(user, String(req.params.id), String(req.params.commentId), parsed.data);
+  }),
+);
+
+crmRouter.delete(
+  "/cards/:id/comments/:commentId",
+  apiHandler({ action: PermissionAction.CRM_VIEW }, async (req, _res, user) => {
+    const comment = await crmService.deleteComment(user, String(req.params.id), String(req.params.commentId));
+    return { id: comment.id };
   }),
 );
 

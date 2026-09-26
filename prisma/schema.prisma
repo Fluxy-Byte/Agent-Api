@@ -1068,6 +1068,9 @@ model CardCrmComment {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   comment   String
   createdAt DateTime @default(now())
+  /// Muda a cada edição do autor — o Agent Console mostra "(editado)" quando
+  /// passa de createdAt (ver crm-card-detail-drawer.tsx#wasEdited).
+  updatedAt DateTime @updatedAt
 
   @@index([cardCrmId])
   @@index([userId])
