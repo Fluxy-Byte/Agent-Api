@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { carteiraService } from "../../../application/carteira/carteira-service";
+import { setTargetCarteirasSchema } from "../../../application/carteira/carteira-validation";
 import { targetService } from "../../../application/target/target-service";
 import {
   createTargetSchema,
@@ -134,5 +136,31 @@ targetsRouter.patch(
     });
 
     return target;
+  }),
+);
+
+targetsRouter.get(
+  "/:id/carteiras",
+  apiHandler({ action: PermissionAction.CONTACTS_VIEW }, async (req, _res, user) => {
+    return carteiraService.listForTarget(user, String(req.params.id));
+  }),
+);
+
+targetsRouter.put(
+  "/:id/carteiras",
+  apiHandler({ action: PermissionAction.CONTACTS_WRITE }, async (req, _res, user) => {
+    const parsed = setTargetCarteirasSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const targetId = String(req.params.id);
+    const carteiras = await carteiraService.setForTarget(user, targetId, parsed.data);
+    await recordAudit(req, user, {
+      action: "TARGET_CARTEIRAS_UPDATED",
+      resourceType: "Target",
+      resourceId: targetId,
+      afterState: { carteiraIds: parsed.data.carteiraIds },
+    });
+
+    return carteiras;
   }),
 );

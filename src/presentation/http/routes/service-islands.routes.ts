@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
+import { carteiraService } from "../../../application/carteira/carteira-service";
+import { upsertCarteiraSchema } from "../../../application/carteira/carteira-validation";
 import { preConfiguredMessageService } from "../../../application/pre-configured-message/pre-configured-message-service";
 import { upsertPreConfiguredMessageSchema } from "../../../application/pre-configured-message/pre-configured-message-validation";
 import { queueService } from "../../../application/queue/queue-service";
@@ -16,6 +18,7 @@ export const serviceIslandsRouter = Router();
 const queuesRouter = Router({ mergeParams: true });
 const tagsRouter = Router({ mergeParams: true });
 const preConfiguredMessagesRouter = Router({ mergeParams: true });
+const carteirasRouter = Router({ mergeParams: true });
 
 const renameSchema = z.object({
   name: z.string().trim().min(1),
@@ -23,6 +26,7 @@ const renameSchema = z.object({
   allowActiveDispatch: z.boolean().optional(),
   allowAudioMessages: z.boolean().optional(),
   useAttendantSignature: z.boolean().optional(),
+  allowAttendantCarteira: z.boolean().optional(),
 });
 
 // max 1000 (não 50) porque o botão "Exportar" do histórico de tickets
@@ -120,6 +124,7 @@ serviceIslandsRouter.put(
       parsed.data.allowActiveDispatch,
       parsed.data.allowAudioMessages,
       parsed.data.useAttendantSignature,
+      parsed.data.allowAttendantCarteira,
     );
 
     await recordAudit(req, user, {
@@ -357,6 +362,70 @@ preConfiguredMessagesRouter.delete(
   }),
 );
 
+carteirasRouter.get(
+  "/",
+  apiHandler({ action: PermissionAction.QUEUES_VIEW }, async (req, _res, user) => {
+    return carteiraService.list(user, String(req.params.id));
+  }),
+);
+
+carteirasRouter.post(
+  "/",
+  apiHandler({ action: PermissionAction.QUEUES_WRITE }, async (req, _res, user) => {
+    const parsed = upsertCarteiraSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const carteira = await carteiraService.create(user, String(req.params.id), parsed.data);
+    await recordAudit(req, user, {
+      action: "CARTEIRA_CREATED",
+      resourceType: "Carteira",
+      resourceId: carteira.id,
+      afterState: carteira,
+    });
+
+    return carteira;
+  }),
+);
+
+carteirasRouter.put(
+  "/:carteiraId",
+  apiHandler({ action: PermissionAction.QUEUES_WRITE }, async (req, _res, user) => {
+    const parsed = upsertCarteiraSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const serviceIslandId = String(req.params.id);
+    const carteiraId = String(req.params.carteiraId);
+    const before = await carteiraService.getById(user, serviceIslandId, carteiraId);
+    const carteira = await carteiraService.update(user, serviceIslandId, carteiraId, parsed.data);
+
+    await recordAudit(req, user, {
+      action: "CARTEIRA_UPDATED",
+      resourceType: "Carteira",
+      resourceId: carteira.id,
+      beforeState: before,
+      afterState: carteira,
+    });
+
+    return carteira;
+  }),
+);
+
+carteirasRouter.delete(
+  "/:carteiraId",
+  apiHandler({ action: PermissionAction.QUEUES_WRITE }, async (req, _res, user) => {
+    const carteira = await carteiraService.remove(user, String(req.params.id), String(req.params.carteiraId));
+    await recordAudit(req, user, {
+      action: "CARTEIRA_DELETED",
+      resourceType: "Carteira",
+      resourceId: carteira.id,
+      beforeState: carteira,
+    });
+
+    return carteira;
+  }),
+);
+
 serviceIslandsRouter.use("/:id/queues", queuesRouter);
 serviceIslandsRouter.use("/:id/tags", tagsRouter);
 serviceIslandsRouter.use("/:id/pre-configured-messages", preConfiguredMessagesRouter);
+serviceIslandsRouter.use("/:id/carteiras", carteirasRouter);

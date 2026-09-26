@@ -112,6 +112,7 @@ export const serviceIslandService = {
     allowActiveDispatch?: boolean,
     allowAudioMessages?: boolean,
     useAttendantSignature?: boolean,
+    allowAttendantCarteira?: boolean,
   ) {
     await this.getById(user, id);
     return prisma.serviceIsland.update({
@@ -122,6 +123,7 @@ export const serviceIslandService = {
         ...(allowActiveDispatch === undefined ? {} : { allowActiveDispatch }),
         ...(allowAudioMessages === undefined ? {} : { allowAudioMessages }),
         ...(useAttendantSignature === undefined ? {} : { useAttendantSignature }),
+        ...(allowAttendantCarteira === undefined ? {} : { allowAttendantCarteira }),
       },
     });
   },

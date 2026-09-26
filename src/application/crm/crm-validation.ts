@@ -37,3 +37,19 @@ export type UpdatePriorityInput = z.infer<typeof updatePrioritySchema>;
 export type PresignAttachmentInput = z.infer<typeof presignAttachmentSchema>;
 export type AddAttachmentInput = z.infer<typeof addAttachmentSchema>;
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
+
+/// Etapa do funil: `value` só é obrigatório (e só é guardado) quando
+/// useValue=true — sem ele a etapa só confere se a chave existe no metadata.
+export const funnelFieldSchema = z
+  .object({
+    name: z.string().trim().min(1, "Nome do campo obrigatório."),
+    value: z.string().trim().optional().nullable(),
+    useValue: z.boolean().default(false),
+  })
+  .refine((data) => !data.useValue || (data.value && data.value.length > 0), {
+    message: "Informe o valor esperado ou desative a comparação por valor.",
+    path: ["value"],
+  })
+  .transform((data) => ({ ...data, value: data.useValue ? data.value! : null }));
+
+export type FunnelFieldInput = z.infer<typeof funnelFieldSchema>;

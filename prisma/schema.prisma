@@ -121,6 +121,7 @@ model Organization {
   auditLogs         AuditLog[]
   errorLogs         ErrorLog[]
   crmToBusiness     CrmToBusiness?
+  funil             Funil?
 
   @@unique([slug])
   @@map("organization")
@@ -432,6 +433,10 @@ model ServiceIsland {
   /// nome dele em negrito (*Nome:*) numa linha acima do texto — ver Desk-Worker
   /// handle-desk-message-outbound.ts.
   useAttendantSignature Boolean @default(false)
+  /// Se true, atendentes das filas desta ilha podem adicionar/remover o
+  /// contato do ticket em carteiras de atendimento pelo Desk (ver Desk-API
+  /// GET/PUT /tickets/:id/carteiras). Usuários do portal podem sempre.
+  allowAttendantCarteira Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -515,7 +520,13 @@ model Queue {
   /// controlada (a fila nunca nasce assim por fora do fluxo automático).
   isDefault Boolean @default(false)
 
+  /// Só fila com esta flag pode ser escolhida como destino de uma Carteira.
+  /// Desligar depois não apaga as carteiras, só faz o roteamento ignorá-las
+  /// (ver Desk-Worker find-or-create-open-ticket.ts#resolveCarteiraQueueId).
+  carteiraEnabled Boolean @default(false)
+
   members               QueueMember[]
+  carteiras             Carteira[]
   tickets               Ticket[]
   defaultForAgents      Agent[]
   defaultForChannels    Channel[]
@@ -523,6 +534,24 @@ model Queue {
   preConfiguredMessages PreConfiguredMessage[] @relation("PreConfiguredMessageQueues")
 
   @@index([serviceIslandId])
+}
+
+/// Carteira de atendimento: todo ticket novo de um contato listado em
+/// targetIds vai pra queueId em vez da fila original (ver Desk-Worker
+/// find-or-create-open-ticket.ts). A fila precisa ter carteiraEnabled=true.
+model Carteira {
+  id        String   @id @default(cuid())
+  name      String
+  queueId   String
+  queue     Queue    @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  /// Ids de Target (mesma empresa da fila) que pertencem a esta carteira.
+  targetIds String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([queueId])
+  @@index([targetIds], type: Gin)
 }
 
 model QueueMember {
@@ -1042,4 +1071,35 @@ model CardCrmComment {
 
   @@index([cardCrmId])
   @@index([userId])
+}
+
+/// Funil de conversões da empresa (1:1 com Organization, criado sob demanda
+/// na primeira vez que a aba "Funil de conversões" é aberta — ver
+/// crm-funnel-service.ts#getOrCreateFunil).
+model Funil {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fields FieldsFunil[]
+}
+
+/// Etapa do funil: aponta pra uma chave de Target.metadata. Com
+/// useValue=false, conta como convertido todo contato que tem a chave
+/// preenchida; com useValue=true, só quem tem exatamente `value` nela.
+model FieldsFunil {
+  id       String  @id @default(cuid())
+  name     String
+  value    String?
+  useValue Boolean @default(false)
+  funilId  String
+  funil    Funil   @relation(fields: [funilId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([funilId])
 }

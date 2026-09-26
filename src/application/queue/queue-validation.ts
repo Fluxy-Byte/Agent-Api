@@ -12,6 +12,8 @@ export const upsertQueueSchema = z.object({
   businessHoursStart: timeString,
   businessHoursEnd: timeString,
   businessDays: z.array(z.number().int().min(0).max(6)).optional(),
+  /// Libera a fila pra ser destino de Carteira de atendimento.
+  carteiraEnabled: z.boolean().optional(),
   /// Lista completa de userIds que devem ficar atrelados à fila — substitui o
   /// conjunto atual inteiro (sincronização idempotente), não é um "add".
   memberUserIds: z.array(z.string().trim().min(1)).optional(),

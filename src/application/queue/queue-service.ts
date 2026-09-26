@@ -119,6 +119,7 @@ export const queueService = {
           businessHoursStart: input.businessHoursStart ?? null,
           businessHoursEnd: input.businessHoursEnd ?? null,
           businessDays: input.businessDays ?? [1, 2, 3, 4, 5],
+          carteiraEnabled: input.carteiraEnabled ?? false,
         },
       });
 
@@ -145,6 +146,7 @@ export const queueService = {
             input.businessHoursStart === undefined ? existing.businessHoursStart : input.businessHoursStart,
           businessHoursEnd: input.businessHoursEnd === undefined ? existing.businessHoursEnd : input.businessHoursEnd,
           businessDays: input.businessDays ?? existing.businessDays,
+          carteiraEnabled: input.carteiraEnabled ?? existing.carteiraEnabled,
         },
       });
 

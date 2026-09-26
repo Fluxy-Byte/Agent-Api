@@ -1,9 +1,11 @@
 import { Router } from "express";
+import { crmFunnelService } from "../../../application/crm/crm-funnel-service";
 import { crmService } from "../../../application/crm/crm-service";
 import {
   addAttachmentSchema,
   createCommentSchema,
   createStageSchema,
+  funnelFieldSchema,
   moveCardSchema,
   presignAttachmentSchema,
   updatePrioritySchema,
@@ -155,5 +157,72 @@ crmRouter.patch(
     });
 
     return card;
+  }),
+);
+
+// ---------- FUNIL DE CONVERSÕES ----------
+
+crmRouter.get(
+  "/funnel",
+  apiHandler({ action: PermissionAction.CRM_VIEW }, async (_req, _res, user) => {
+    return crmFunnelService.getFunnel(user);
+  }),
+);
+
+crmRouter.post(
+  "/funnel/fields",
+  apiHandler({ action: PermissionAction.CRM_WRITE }, async (req, _res, user) => {
+    const parsed = funnelFieldSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const field = await crmFunnelService.createField(user, parsed.data);
+    await recordAudit(req, user, {
+      action: "CRM_FUNNEL_FIELD_CREATED",
+      resourceType: "FieldsFunil",
+      resourceId: field.id,
+      afterState: field,
+    });
+
+    return field;
+  }),
+);
+
+crmRouter.patch(
+  "/funnel/fields/:id",
+  apiHandler({ action: PermissionAction.CRM_WRITE }, async (req, _res, user) => {
+    const parsed = funnelFieldSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const field = await crmFunnelService.updateField(user, String(req.params.id), parsed.data);
+    await recordAudit(req, user, {
+      action: "CRM_FUNNEL_FIELD_UPDATED",
+      resourceType: "FieldsFunil",
+      resourceId: field.id,
+      afterState: field,
+    });
+
+    return field;
+  }),
+);
+
+crmRouter.delete(
+  "/funnel/fields/:id",
+  apiHandler({ action: PermissionAction.CRM_WRITE }, async (req, _res, user) => {
+    const field = await crmFunnelService.deleteField(user, String(req.params.id));
+    await recordAudit(req, user, {
+      action: "CRM_FUNNEL_FIELD_DELETED",
+      resourceType: "FieldsFunil",
+      resourceId: field.id,
+      beforeState: field,
+    });
+
+    return field;
+  }),
+);
+
+crmRouter.get(
+  "/funnel/fields/:id/targets",
+  apiHandler({ action: PermissionAction.CRM_VIEW }, async (req, _res, user) => {
+    return crmFunnelService.getFieldTargets(user, String(req.params.id));
   }),
 );
