@@ -1,15 +1,21 @@
 import { Router } from "express";
+import { crmCalendarService } from "../../../application/crm/crm-calendar-service";
 import { crmFunnelService } from "../../../application/crm/crm-funnel-service";
 import { crmService } from "../../../application/crm/crm-service";
 import {
   addAttachmentSchema,
+  calendarAnnotationSchema,
+  calendarTargetSearchQuerySchema,
+  createCalendarEventSchema,
   createCommentSchema,
   createStageSchema,
   funnelFieldSchema,
+  listCalendarEventsQuerySchema,
   moveCardSchema,
   presignAttachmentSchema,
   removeAttachmentQuerySchema,
   updatePrioritySchema,
+  updateCalendarEventSchema,
   updateStageSchema,
 } from "../../../application/crm/crm-validation";
 import { PermissionAction } from "../../../domain/enums/permission-action";
@@ -263,5 +269,159 @@ crmRouter.get(
   "/funnel/fields/:id/targets",
   apiHandler({ action: PermissionAction.CRM_VIEW }, async (req, _res, user) => {
     return crmFunnelService.getFieldTargets(user, String(req.params.id));
+  }),
+);
+
+// ---------- CALENDÁRIO ----------
+
+crmRouter.get(
+  "/calendar/events",
+  apiHandler({ action: PermissionAction.CRM_VIEW }, async (req, _res, user) => {
+    const parsed = listCalendarEventsQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Parâmetros inválidos.", parsed.error.flatten());
+
+    return crmCalendarService.listEvents(user, parsed.data.from, parsed.data.to);
+  }),
+);
+
+crmRouter.get(
+  "/calendar/targets",
+  apiHandler({ action: PermissionAction.CRM_VIEW }, async (req, _res, user) => {
+    const parsed = calendarTargetSearchQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Parâmetros inválidos.", parsed.error.flatten());
+
+    return crmCalendarService.searchTargets(user, parsed.data.q);
+  }),
+);
+
+crmRouter.post(
+  "/calendar/events",
+  apiHandler({ action: PermissionAction.CRM_WRITE }, async (req, _res, user) => {
+    const parsed = createCalendarEventSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const event = await crmCalendarService.createEvent(user, parsed.data);
+    await recordAudit(req, user, {
+      action: "CALENDAR_EVENT_CREATED",
+      resourceType: "CalendarEvent",
+      resourceId: event.id,
+      afterState: event,
+    });
+
+    return event;
+  }),
+);
+
+crmRouter.get(
+  "/calendar/events/:id",
+  apiHandler({ action: PermissionAction.CRM_VIEW }, async (req, _res, user) => {
+    return crmCalendarService.getEvent(user, String(req.params.id));
+  }),
+);
+
+crmRouter.patch(
+  "/calendar/events/:id",
+  apiHandler({ action: PermissionAction.CRM_WRITE }, async (req, _res, user) => {
+    const parsed = updateCalendarEventSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const before = await crmCalendarService.findEvent(user, String(req.params.id));
+    const event = await crmCalendarService.updateEvent(user, before.id, parsed.data);
+    await recordAudit(req, user, {
+      action: "CALENDAR_EVENT_UPDATED",
+      resourceType: "CalendarEvent",
+      resourceId: event.id,
+      beforeState: before,
+      afterState: event,
+    });
+
+    return event;
+  }),
+);
+
+crmRouter.delete(
+  "/calendar/events/:id",
+  apiHandler({ action: PermissionAction.CRM_WRITE }, async (req, _res, user) => {
+    const event = await crmCalendarService.deleteEvent(user, String(req.params.id));
+    await recordAudit(req, user, {
+      action: "CALENDAR_EVENT_DELETED",
+      resourceType: "CalendarEvent",
+      resourceId: event.id,
+      beforeState: event,
+    });
+
+    return { id: event.id };
+  }),
+);
+
+crmRouter.post(
+  "/calendar/events/:id/documents/presign",
+  apiHandler({ action: PermissionAction.CRM_WRITE }, async (req, _res, user) => {
+    const parsed = presignAttachmentSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    return crmCalendarService.presignDocument(user, String(req.params.id), parsed.data);
+  }),
+);
+
+crmRouter.post(
+  "/calendar/events/:id/documents",
+  apiHandler({ action: PermissionAction.CRM_WRITE }, async (req, _res, user) => {
+    const parsed = addAttachmentSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const event = await crmCalendarService.addDocument(user, String(req.params.id), parsed.data);
+    return { id: event.id, documents: event.documents };
+  }),
+);
+
+// s3Key vai na query (DELETE sem body) — o arquivo continua no S3.
+crmRouter.delete(
+  "/calendar/events/:id/documents",
+  apiHandler({ action: PermissionAction.CRM_WRITE }, async (req, _res, user) => {
+    const parsed = removeAttachmentQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    const event = await crmCalendarService.removeDocument(user, String(req.params.id), parsed.data.s3Key);
+    return { id: event.id, documents: event.documents };
+  }),
+);
+
+// Anotar só exige ver o CRM (mesma regra dos comentários do card);
+// editar/apagar só o autor (crm-calendar-service.ts#findOwnAnnotation).
+crmRouter.post(
+  "/calendar/events/:id/annotations",
+  apiHandler({ action: PermissionAction.CRM_VIEW }, async (req, _res, user) => {
+    const parsed = calendarAnnotationSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    return crmCalendarService.addAnnotation(user, String(req.params.id), parsed.data);
+  }),
+);
+
+crmRouter.patch(
+  "/calendar/events/:id/annotations/:annotationId",
+  apiHandler({ action: PermissionAction.CRM_VIEW }, async (req, _res, user) => {
+    const parsed = calendarAnnotationSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("Dados inválidos.", parsed.error.flatten());
+
+    return crmCalendarService.updateAnnotation(
+      user,
+      String(req.params.id),
+      String(req.params.annotationId),
+      parsed.data,
+    );
+  }),
+);
+
+crmRouter.delete(
+  "/calendar/events/:id/annotations/:annotationId",
+  apiHandler({ action: PermissionAction.CRM_VIEW }, async (req, _res, user) => {
+    const annotation = await crmCalendarService.deleteAnnotation(
+      user,
+      String(req.params.id),
+      String(req.params.annotationId),
+    );
+    return { id: annotation.id };
   }),
 );

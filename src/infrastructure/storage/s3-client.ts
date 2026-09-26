@@ -66,6 +66,30 @@ export async function createCrmAttachmentUploadUrl(input: {
   return { uploadUrl, s3Key };
 }
 
+export function calendarEventDocumentKeyPrefix(organizationId: string, eventId: string): string {
+  return `${env.SEAWEEDFS_S3_PREFIX}/calendar-documents/${organizationId}/${eventId}/`;
+}
+
+/// URL presignada de PUT pro documento de um evento do calendário ir direto
+/// do navegador pro S3 (mesmo fluxo do anexo de card do CRM).
+export async function createCalendarEventDocumentUploadUrl(input: {
+  organizationId: string;
+  eventId: string;
+  fileName: string;
+  contentType: string;
+}): Promise<{ uploadUrl: string; s3Key: string }> {
+  const safeFileName = input.fileName.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  const s3Key = `${calendarEventDocumentKeyPrefix(input.organizationId, input.eventId)}${Date.now()}-${safeFileName}`;
+
+  const uploadUrl = await getSignedUrl(
+    client,
+    new PutObjectCommand({ Bucket: env.SEAWEEDFS_S3_BUCKET, Key: s3Key, ContentType: input.contentType }),
+    { expiresIn: 300 },
+  );
+
+  return { uploadUrl, s3Key };
+}
+
 /// URL presignada de leitura (1h) — o bucket não precisa ser público.
 export function createDownloadUrl(s3Key: string): Promise<string> {
   return getSignedUrl(client, new GetObjectCommand({ Bucket: env.SEAWEEDFS_S3_BUCKET, Key: s3Key }), {

@@ -1,0 +1,220 @@
+import { ForbiddenError, NotFoundError, ValidationError } from "../../domain/errors/app-error";
+import { prisma } from "../../infrastructure/database/prisma/client";
+import {
+  calendarEventDocumentKeyPrefix,
+  createCalendarEventDocumentUploadUrl,
+  createDownloadUrl,
+} from "../../infrastructure/storage/s3-client";
+import type { AuthUser } from "../../presentation/http/types/auth-user";
+import type {
+  AddAttachmentInput,
+  CalendarAnnotationInput,
+  CreateCalendarEventInput,
+  PresignAttachmentInput,
+  UpdateCalendarEventInput,
+} from "./crm-validation";
+
+/// Janela máxima de uma listagem — a tela pede um mês por vez (com as
+/// semanas vizinhas visíveis na grade), isso só evita varrer o ano inteiro.
+const MAX_RANGE_MS = 62 * 24 * 60 * 60 * 1000;
+
+const EVENT_TARGET_SELECT = { id: true, name: true, waId: true, email: true } as const;
+
+/// A chave é `<prefixo>/<timestamp>-<nome_seguro>` — o nome de exibição é o
+/// que sobra depois do timestamp (mesma regra dos anexos de card).
+function documentFileName(s3Key: string): string {
+  const base = s3Key.split("/").pop() ?? s3Key;
+  return base.replace(/^\d+-/, "");
+}
+
+async function getOrCreateCalendar(organizationId: string) {
+  return prisma.calendarOrganization.upsert({ where: { organizationId }, create: { organizationId }, update: {} });
+}
+
+async function assertTargetBelongsToOrganization(targetId: string, organizationId: string) {
+  const target = await prisma.target.findFirst({ where: { id: targetId, organizationId }, select: { id: true } });
+  if (!target) throw new ValidationError("Contato inválido para esta empresa.");
+}
+
+export const crmCalendarService = {
+  /// Eventos da empresa ativa dentro de [from, to] — só o resumo que a grade
+  /// do calendário precisa; o detalhe vem de getEvent.
+  async listEvents(user: AuthUser, from: Date, to: Date) {
+    if (to.getTime() < from.getTime()) throw new ValidationError("A data final precisa ser depois da inicial.");
+    if (to.getTime() - from.getTime() > MAX_RANGE_MS) throw new ValidationError("Período muito longo (máx. 62 dias).");
+
+    const calendar = await getOrCreateCalendar(user.activeOrganizationId!);
+    return prisma.calendarEvent.findMany({
+      where: { calendarOrganizationId: calendar.id, dateEvent: { gte: from, lte: to } },
+      select: {
+        id: true,
+        name: true,
+        dateEvent: true,
+        status: true,
+        isClosed: true,
+        target: { select: EVENT_TARGET_SELECT },
+      },
+      orderBy: { dateEvent: "asc" },
+    });
+  },
+
+  async findEvent(user: AuthUser, eventId: string) {
+    const calendar = await getOrCreateCalendar(user.activeOrganizationId!);
+    const event = await prisma.calendarEvent.findFirst({ where: { id: eventId, calendarOrganizationId: calendar.id } });
+    if (!event) throw new NotFoundError("Evento não encontrado.");
+    return event;
+  },
+
+  /// Tudo que o modal do evento precisa: contato, anotações com autor e os
+  /// documentos já com URL presignada de leitura.
+  async getEvent(user: AuthUser, eventId: string) {
+    const existing = await this.findEvent(user, eventId);
+    const event = await prisma.calendarEvent.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: {
+        target: { select: EVENT_TARGET_SELECT },
+        annotations: { orderBy: { createdAt: "desc" }, include: { user: { select: { id: true, name: true } } } },
+      },
+    });
+
+    const documents = await Promise.all(
+      event.documents.map(async (s3Key) => ({
+        s3Key,
+        fileName: documentFileName(s3Key),
+        url: await createDownloadUrl(s3Key),
+      })),
+    );
+
+    return { ...event, documents };
+  },
+
+  async createEvent(user: AuthUser, input: CreateCalendarEventInput) {
+    const organizationId = user.activeOrganizationId!;
+    await assertTargetBelongsToOrganization(input.targetId, organizationId);
+    const calendar = await getOrCreateCalendar(organizationId);
+
+    return prisma.calendarEvent.create({
+      data: {
+        calendarOrganizationId: calendar.id,
+        targetId: input.targetId,
+        name: input.name,
+        description: input.description || null,
+        dateEvent: input.dateEvent,
+      },
+    });
+  },
+
+  /// Evento encerrado só aceita reabrir (isClosed=false) e mudar o status —
+  /// nome, descrição, data e contato ficam travados até reabrir.
+  async updateEvent(user: AuthUser, eventId: string, input: UpdateCalendarEventInput) {
+    const event = await this.findEvent(user, eventId);
+
+    const changesData =
+      input.name !== undefined ||
+      input.description !== undefined ||
+      input.dateEvent !== undefined ||
+      input.targetId !== undefined;
+    const staysClosed = input.isClosed ?? event.isClosed;
+    if (staysClosed && changesData) throw new ValidationError("Evento encerrado — reabra o evento para editar os dados.");
+
+    if (input.targetId) await assertTargetBelongsToOrganization(input.targetId, user.activeOrganizationId!);
+
+    return prisma.calendarEvent.update({
+      where: { id: event.id },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.description !== undefined ? { description: input.description || null } : {}),
+        ...(input.dateEvent !== undefined ? { dateEvent: input.dateEvent } : {}),
+        ...(input.targetId !== undefined ? { targetId: input.targetId } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.isClosed !== undefined ? { isClosed: input.isClosed } : {}),
+      },
+    });
+  },
+
+  async deleteEvent(user: AuthUser, eventId: string) {
+    const event = await this.findEvent(user, eventId);
+    await prisma.calendarEvent.delete({ where: { id: event.id } });
+    return event;
+  },
+
+  /// Busca de contato do modal de criar evento — só nome/telefone, 20 por
+  /// vez. Endpoint próprio pra não exigir a permissão de Contatos de quem só
+  /// usa o Kanban/calendário.
+  async searchTargets(user: AuthUser, q?: string) {
+    return prisma.target.findMany({
+      where: {
+        organizationId: user.activeOrganizationId!,
+        ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { waId: { contains: q } }] } : {}),
+      },
+      select: EVENT_TARGET_SELECT,
+      orderBy: { lastInteractionAt: { sort: "desc", nulls: "last" } },
+      take: 20,
+    });
+  },
+
+  // ---------- DOCUMENTOS ----------
+
+  async presignDocument(user: AuthUser, eventId: string, input: PresignAttachmentInput) {
+    const event = await this.findEvent(user, eventId);
+    return createCalendarEventDocumentUploadUrl({
+      organizationId: user.activeOrganizationId!,
+      eventId: event.id,
+      fileName: input.fileName,
+      contentType: input.contentType,
+    });
+  },
+
+  /// A chave precisa ter o prefixo deste evento/empresa — impede anexar
+  /// arquivo de outro evento ou de outra empresa forjando a chave.
+  async addDocument(user: AuthUser, eventId: string, input: AddAttachmentInput) {
+    const event = await this.findEvent(user, eventId);
+    if (!input.s3Key.startsWith(calendarEventDocumentKeyPrefix(user.activeOrganizationId!, event.id))) {
+      throw new ValidationError("Arquivo inválido para este evento.");
+    }
+    return prisma.calendarEvent.update({ where: { id: event.id }, data: { documents: { push: input.s3Key } } });
+  },
+
+  /// Só tira da lista do evento — o arquivo continua no S3 (mesma regra do card).
+  async removeDocument(user: AuthUser, eventId: string, s3Key: string) {
+    const event = await this.findEvent(user, eventId);
+    if (!event.documents.includes(s3Key)) throw new NotFoundError("Documento não encontrado neste evento.");
+    return prisma.calendarEvent.update({
+      where: { id: event.id },
+      data: { documents: event.documents.filter((key) => key !== s3Key) },
+    });
+  },
+
+  // ---------- ANOTAÇÕES ----------
+
+  async addAnnotation(user: AuthUser, eventId: string, input: CalendarAnnotationInput) {
+    const event = await this.findEvent(user, eventId);
+    return prisma.calendarEventAnnotation.create({
+      data: { eventId: event.id, userId: user.id, message: input.message },
+      include: { user: { select: { id: true, name: true } } },
+    });
+  },
+
+  async findOwnAnnotation(user: AuthUser, eventId: string, annotationId: string) {
+    const event = await this.findEvent(user, eventId);
+    const annotation = await prisma.calendarEventAnnotation.findFirst({ where: { id: annotationId, eventId: event.id } });
+    if (!annotation) throw new NotFoundError("Anotação não encontrada.");
+    if (annotation.userId !== user.id) throw new ForbiddenError("Só o autor pode alterar esta anotação.");
+    return annotation;
+  },
+
+  async updateAnnotation(user: AuthUser, eventId: string, annotationId: string, input: CalendarAnnotationInput) {
+    const annotation = await this.findOwnAnnotation(user, eventId, annotationId);
+    return prisma.calendarEventAnnotation.update({
+      where: { id: annotation.id },
+      data: { message: input.message },
+      include: { user: { select: { id: true, name: true } } },
+    });
+  },
+
+  async deleteAnnotation(user: AuthUser, eventId: string, annotationId: string) {
+    const annotation = await this.findOwnAnnotation(user, eventId, annotationId);
+    await prisma.calendarEventAnnotation.delete({ where: { id: annotation.id } });
+    return annotation;
+  },
+};

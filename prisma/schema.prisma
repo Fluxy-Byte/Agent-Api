@@ -39,6 +39,7 @@ model User {
   queueMemberships          QueueMember[]
   assignedTickets           Ticket[]
   cardCrmComments           CardCrmComment[]
+  calendarEventAnnotations  CalendarEventAnnotation[]
   campaignsRoutedToMe       Campaign[]         @relation("CampaignRouteToUser")
 
   @@unique([email])
@@ -122,6 +123,7 @@ model Organization {
   errorLogs         ErrorLog[]
   crmToBusiness     CrmToBusiness?
   funil             Funil?
+  calendar          CalendarOrganization?
 
   @@unique([slug])
   @@map("organization")
@@ -624,6 +626,7 @@ model Target {
   campaignTargets      CampaignTarget[]
   targetBlockCampaigns TargetBlockCampaign[]
   cardCrm              CardCrm?
+  calendarEvents       CalendarEvent[]
 
   /// bsuid é o vínculo principal (Postgres não colide NULLs entre si, então
   /// múltiplos Target sem bsuid/waId ainda cabem nos dois índices sem briga).
@@ -1105,4 +1108,69 @@ model FieldsFunil {
   updatedAt DateTime @updatedAt
 
   @@index([funilId])
+}
+
+/// Calendário de eventos da empresa (aba "Calendário" do Kanban Board) —
+/// 1:1 com Organization, criado sob demanda na primeira vez que a aba abre
+/// (ver crm-calendar-service.ts#getOrCreateCalendar).
+model CalendarOrganization {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events CalendarEvent[]
+}
+
+/// Situação final de um evento. null = ainda agendado (nenhuma das três).
+enum EventStatus {
+  FINISHED
+  RESCHEDULED
+  CANCELED
+}
+
+/// Evento do calendário, sempre ligado a um contato (Target).
+model CalendarEvent {
+  id                     String               @id @default(cuid())
+  calendarOrganizationId String
+  calendarOrganization   CalendarOrganization @relation(fields: [calendarOrganizationId], references: [id], onDelete: Cascade)
+  targetId               String
+  target                 Target               @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  dateEvent   DateTime
+  name        String
+  description String?
+  /// Evento encerrado (não aceita mais alteração de data/dados pela tela).
+  isClosed    Boolean      @default(false)
+  status      EventStatus?
+
+  /// Chaves S3 (não URLs) dos documentos do evento — mesma regra de
+  /// CardCrm.attachments: a URL presignada é gerada na hora de devolver.
+  documents String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  annotations CalendarEventAnnotation[]
+
+  @@index([calendarOrganizationId, dateEvent])
+  @@index([targetId])
+}
+
+/// Anotação deixada por um usuário no evento — editar/apagar só pelo autor.
+model CalendarEventAnnotation {
+  id        String        @id @default(cuid())
+  eventId   String
+  event     CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventId])
+  @@index([userId])
 }

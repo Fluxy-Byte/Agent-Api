@@ -57,3 +57,41 @@ export const funnelFieldSchema = z
   .transform((data) => ({ ...data, value: data.useValue ? data.value! : null }));
 
 export type FunnelFieldInput = z.infer<typeof funnelFieldSchema>;
+
+// ---------- CALENDÁRIO ----------
+
+const EVENT_STATUS_VALUES = ["FINISHED", "RESCHEDULED", "CANCELED"] as const;
+
+export const listCalendarEventsQuerySchema = z.object({
+  from: z.coerce.date({ message: "Data inicial inválida." }),
+  to: z.coerce.date({ message: "Data final inválida." }),
+});
+
+export const createCalendarEventSchema = z.object({
+  name: z.string().trim().min(1, "Nome do evento obrigatório."),
+  description: z.string().trim().max(5000).optional().nullable(),
+  dateEvent: z.coerce.date({ message: "Data do evento inválida." }),
+  targetId: z.string().trim().min(1, "Selecione o contato do evento."),
+});
+
+/// Todos opcionais — a tela manda só o que mudou. status null = volta a "Agendado".
+export const updateCalendarEventSchema = z.object({
+  name: z.string().trim().min(1, "Nome do evento obrigatório.").optional(),
+  description: z.string().trim().max(5000).optional().nullable(),
+  dateEvent: z.coerce.date({ message: "Data do evento inválida." }).optional(),
+  targetId: z.string().trim().min(1).optional(),
+  status: z.enum(EVENT_STATUS_VALUES, { message: "Status inválido." }).nullable().optional(),
+  isClosed: z.boolean().optional(),
+});
+
+export const calendarAnnotationSchema = z.object({
+  message: z.string().trim().min(1, "Escreva a anotação.").max(2000, "Anotação muito longa (máx. 2000 caracteres)."),
+});
+
+export const calendarTargetSearchQuerySchema = z.object({
+  q: z.string().trim().optional(),
+});
+
+export type CreateCalendarEventInput = z.infer<typeof createCalendarEventSchema>;
+export type UpdateCalendarEventInput = z.infer<typeof updateCalendarEventSchema>;
+export type CalendarAnnotationInput = z.infer<typeof calendarAnnotationSchema>;
